@@ -34,9 +34,7 @@
 
 namespace cuda_norm {
 
-// ---------------------------------------------------------------------------
 // 策略一: WarpImpl  (K ≤ 1024)
-// ---------------------------------------------------------------------------
 template <typename LOAD, typename STORE, typename ComputeType, typename Stats,
           int pack_size, int cols_per_thread, int thread_group_width,
           int rows_per_access>
@@ -75,7 +73,7 @@ __global__ void NormWarpImpl(LOAD load, STORE store,
             }
         }
 
-        // 第 2 步: warp 规约 → 计算统计量 --------------------------------
+        // 第 2 步: warp 规约 → 计算统计量
         typename Stats::stat_t stat[rows_per_access];
 #pragma unroll
         for (int r = 0; r < rows_per_access; ++r) {
@@ -84,7 +82,7 @@ __global__ void NormWarpImpl(LOAD load, STORE store,
             stat[r] = Stats::compute(acc[r], cols, eps);
         }
 
-        // 第 3 步: 寄存器内就地归一化 -----------------------------------
+        // 第 3 步: 寄存器内就地归一化
 #pragma unroll
         for (int r = 0; r < rows_per_access; ++r) {
             const int row = base_row + r;
@@ -92,7 +90,7 @@ __global__ void NormWarpImpl(LOAD load, STORE store,
             Stats::normalize(buf[r], stat[r], cols_per_thread);
         }
 
-        // 第 4 步: 写出 (AffineStore 在此融合 gamma/beta) ---------------
+        // 第 4 步: 写出 (AffineStore 在此融合 gamma/beta
 #pragma unroll
         for (int r = 0; r < rows_per_access; ++r) {
             const int row = base_row + r;
@@ -106,9 +104,7 @@ __global__ void NormWarpImpl(LOAD load, STORE store,
     }
 }
 
-// ---------------------------------------------------------------------------
 // 策略二: BlockSMemImpl  (K > 1024)
-// ---------------------------------------------------------------------------
 template <typename LOAD, typename STORE, typename ComputeType, typename Stats,
           int pack_size, int block_size>
 __global__ void NormBlockSMemImpl(LOAD load, STORE store,
@@ -122,7 +118,7 @@ __global__ void NormBlockSMemImpl(LOAD load, STORE store,
     __shared__ typename Stats::stat_t s_stat;
 
     for (int row = blockIdx.x; row < rows; row += gridDim.x) {
-        // 第 1 步: 读 global → 写 smem + 累加统计量 --------------------
+        // 第 1 步: 读 global → 写 smem + 累加统计量
         typename Stats::accum_t acc;
         Stats::init(acc);
 
@@ -136,7 +132,7 @@ __global__ void NormBlockSMemImpl(LOAD load, STORE store,
             Stats::accumulate(acc, vals, pack_size);
         }
 
-        // 第 2 步: block 规约 → 计算统计量 → broadcast ---------------
+        // 第 2 步: block 规约 → 计算统计量 → broadcast
         // block_reduce 后仅 warp0 持有正确结果，需通过 shared memory 广播
         acc = Stats::template block_reduce<block_size>(acc);
         if (threadIdx.x == 0) s_stat = Stats::compute(acc, cols, eps);
@@ -144,7 +140,7 @@ __global__ void NormBlockSMemImpl(LOAD load, STORE store,
 
         typename Stats::stat_t stat = s_stat;
 
-        // 第 3 步: 从 smem 读取 → 归一化 → 写 global ------------------
+        // 第 3 步: 从 smem 读取 → 归一化 → 写 global
         for (int p = threadIdx.x; p < num_packs; p += block_size) {
             ComputeType vals[pack_size];
 #pragma unroll
