@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# CUDA / CMake build artifacts
+build/
+*.o
+*.out
+*.ptx
+*.cubin
+*.fatbin
+
+# Data files
+data/
+*.tar.gz
+*.tgz
+
+# Benchmark outputs
+*.csv
+*.png
+*.html
+results/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
