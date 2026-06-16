@@ -1,7 +1,6 @@
 #pragma once
 #include <cuda_runtime.h>
 
-// 每线程沿 M 方向算 TM 个输出，复用 sB 提升算访比
 template <int BM = 64, int BN = 64, int BK = 4, int TM = 16>
 __global__ void sgemm_v1_1(const float* __restrict__ A,
                            const float* __restrict__ B,
@@ -10,7 +9,7 @@ __global__ void sgemm_v1_1(const float* __restrict__ A,
   __shared__ float sA[BM][BK], sB[BK][BN];
 
   const int bx = blockIdx.x, by = blockIdx.y;
-  const int tx = threadIdx.x, ty = threadIdx.y;        // blockDim: (BN, BM/TM)
+  const int tx = threadIdx.x, ty = threadIdx.y;
   const int tid = ty * BN + tx;
 
   const int col = bx * BN + tx;
@@ -28,7 +27,7 @@ __global__ void sgemm_v1_1(const float* __restrict__ A,
     sB[br][bc] = (gb_row < K && gb_col < N) ? B[gb_row * N + bc + bx * BN] : 0.f;
     __syncthreads();
 
-    // 内层：一个 sB 值复用 TM 次
+    
     #pragma unroll
     for (int k = 0; k < BK; ++k) {
       float b_val = sB[k][tx];
@@ -39,7 +38,6 @@ __global__ void sgemm_v1_1(const float* __restrict__ A,
     __syncthreads();
   }
 
-  // 写回：本线程的 TM 个输出
   #pragma unroll
   for (int m = 0; m < TM; ++m) {
     int row = by * BM + ty * TM + m;

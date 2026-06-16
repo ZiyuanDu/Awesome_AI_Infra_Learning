@@ -3,16 +3,16 @@
   GPU: NVIDIA GeForce RTX 4090 D  |  SMs: 114  |  sm_89
 ================================================================
 
---- SGEMM M=N=K=2048  (137.4 GFLOPs) ---
+--- SGEMM M=N=K=4096  (137.4 GFLOPs) ---
   kernel                         time    TFLOPS  vs ref
-  v0-naive                28.3669 ms     4.85 TFLOPS  ref
-  v1-smem                 22.3547 ms     6.15 TFLOPS  0.00e+00
-  v1-1Dtiling              6.8429 ms    20.08 TFLOPS  0.00e+00
-  v1-2Dtiling              5.0518 ms    27.21 TFLOPS  0.00e+00
-  v2-tile                  3.8235 ms    35.95 TFLOPS  0.00e+00
-  v3-dbuf                  3.4644 ms    39.67 TFLOPS  0.00e+00
-  v4-async                 3.3928 ms    40.51 TFLOPS  0.00e+00
-  v5-wmma                  2.5524 ms    53.85 TFLOPS  1.08e+00
-  cuBLAS(FP32)             2.8383 ms    48.42 TFLOPS  0.00e+00
-  cuBLAS(TF32)             1.9762 ms    69.55 TFLOPS  9.83e-01
+  v0-naive                40.7988 ms     3.37 TFLOPS  ref
+  v1-smem                 37.0749 ms     3.71 TFLOPS  0.00e+00
+  v1-1Dtiling              9.1759 ms    14.98 TFLOPS  0.00e+00
+  v1-2Dtiling              6.9425 ms    19.80 TFLOPS  0.00e+00
+  v2-tile                  5.1191 ms    26.85 TFLOPS  0.00e+00
+  v3-dbuf                  4.3883 ms    31.32 TFLOPS  0.00e+00
+  v4-async                 4.2781 ms    32.13 TFLOPS  0.00e+00
+  v5-wmma                  3.4275 ms    40.10 TFLOPS  1.08e+00
+  cuBLAS(FP32)             3.7720 ms    36.44 TFLOPS  0.00e+00
+  cuBLAS(TF32)             2.6365 ms    52.13 TFLOPS  9.83e-01
 
