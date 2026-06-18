@@ -5,14 +5,14 @@
 
 --- SGEMM M=N=K=4096  (137.4 GFLOPs) ---
   kernel                         time    TFLOPS  vs ref
-  v0-naive                40.7988 ms     3.37 TFLOPS  ref
-  v1-smem                 37.0749 ms     3.71 TFLOPS  0.00e+00
-  v1-1Dtiling              9.1759 ms    14.98 TFLOPS  0.00e+00
-  v1-2Dtiling              6.9425 ms    19.80 TFLOPS  0.00e+00
-  v2-tile                  5.1191 ms    26.85 TFLOPS  0.00e+00
-  v3-dbuf                  4.3883 ms    31.32 TFLOPS  0.00e+00
-  v4-async                 4.2781 ms    32.13 TFLOPS  0.00e+00
-  v5-wmma                  3.4275 ms    40.10 TFLOPS  1.08e+00
-  cuBLAS(FP32)             3.7720 ms    36.44 TFLOPS  0.00e+00
-  cuBLAS(TF32)             2.6365 ms    52.13 TFLOPS  9.83e-01
+  v0-naive                28.3543 ms     4.85 TFLOPS  ref
+  v1-smem                 22.4685 ms     6.12 TFLOPS  0.00e+00
+  v1-1Dtiling              6.8106 ms    20.18 TFLOPS  0.00e+00
+  v1-2Dtiling              5.0461 ms    27.24 TFLOPS  0.00e+00
+  v2-tile                  3.7991 ms    36.18 TFLOPS  0.00e+00
+  v3-dbuf                  3.4228 ms    40.15 TFLOPS  0.00e+00
+  v4-async                 3.3985 ms    40.44 TFLOPS  0.00e+00
+  v5-wmma                  2.5480 ms    53.94 TFLOPS  1.08e+00
+  cuBLAS(FP32)             2.8700 ms    47.89 TFLOPS  0.00e+00
+  cuBLAS(TF32)             1.9777 ms    69.49 TFLOPS  9.83e-01
 
