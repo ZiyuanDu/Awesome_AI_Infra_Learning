@@ -55,7 +55,6 @@ int main() {
     bench("v2-tile",           launch_sgemm_v2<>);
     bench("v3-dbuf",           launch_sgemm_v3<>);
     bench("cuBLAS(FP32)",      launch_cublas_sgemm_fp32);
-    bench("v5-wmma",           launch_sgemm_v5);
   });
 
   return 0;
