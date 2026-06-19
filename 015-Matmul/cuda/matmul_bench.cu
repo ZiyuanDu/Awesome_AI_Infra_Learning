@@ -11,17 +11,13 @@
 #include "v1_2Dtiling.cuh"
 #include "v2_tile.cuh"
 #include "v3_dbuf.cuh"
-#include "v4_async.cuh"
-#include "v5_wmma.cuh"
 
 int main() {
   cudaDeviceProp prop;
   CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-  printf("================================================================\n");
   printf("  CUDA SGEMM — v0 to v6 optimization journey\n");
   printf("  GPU: %s  |  SMs: %d  |  sm_%d%d\n",
          prop.name, prop.multiProcessorCount, prop.major, prop.minor);
-  printf("================================================================\n\n");
 
   constexpr int ITERS = 100;
 
@@ -60,7 +56,6 @@ int main() {
     bench("v3-dbuf",           launch_sgemm_v3<>);
     bench("cuBLAS(FP32)",      launch_cublas_sgemm_fp32);
     bench("v5-wmma",           launch_sgemm_v5);
-    bench("cuBLAS(TF32)",      launch_cublas_sgemm_tf32);
   });
 
   return 0;
