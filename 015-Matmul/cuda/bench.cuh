@@ -129,8 +129,6 @@ public:
 
 static CublasHandle g_cublas;
 
-// ---- 真 FP32 基线：CUDA core，不走 TF32，对标 v2/v3/v4 ----
-// cuBLAS 列主序：C_col(N,M) = α * B_col(N,K) * A_col(K,M)
 inline void launch_cublas_sgemm_fp32(const float* A, const float* B, float* C,
                                      int M, int N, int K) {
   const float alpha = 1.0f, beta = 0.0f;
@@ -141,7 +139,7 @@ inline void launch_cublas_sgemm_fp32(const float* A, const float* B, float* C,
       A, CUDA_R_32F, K,
       &beta,
       C, CUDA_R_32F, N,
-      CUBLAS_COMPUTE_32F,            // 真 FP32 计算与累加
+      CUBLAS_COMPUTE_32F,
       CUBLAS_GEMM_DEFAULT));
 }
 
@@ -160,7 +158,6 @@ inline void launch_cublas_sgemm_tf32(const float* A, const float* B, float* C,
       CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 }
 
-// ---- 兼容旧接口（可选，建议优先用上面两个显式入口）----
 inline void launch_cublas_sgemm(const float* A, const float* B, float* C,
                                 int M, int N, int K) {
   const float alpha = 1.0f, beta = 0.0f;

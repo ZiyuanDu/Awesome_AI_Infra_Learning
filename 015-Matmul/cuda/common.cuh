@@ -24,7 +24,7 @@ __device__ __forceinline__ void load_tile(
   }
 }
 
-// 寄存器 -> shared，直存）：dst[r][c] = reg
+// 寄存器 -> shared：dst[r][c] = reg
 template <int ROWS, int COLS, int NT, int NF, int LD>
 __device__ __forceinline__ void store_tile(
     float (*dst)[LD], int tid, const float4 (&reg)[NF]) {
@@ -62,28 +62,6 @@ __device__ __forceinline__ void store_b(
   store_tile<BK, BN, NT, NF, LD>(sB, tid, reg);
 }
 
-// global B -> shared via cp.async，越界用 src-size=0 零填充
-template <int BK, int BN, int NT, int NF, int LD>
-__device__ __forceinline__ void load_b_async(
-    const float* __restrict__ B, int N, int k_base, int col_base, int K,
-    int tid, float (*sB)[LD]) {
-  constexpr int F4 = BK * BN / 4, PR = BN / 4;
-  #pragma unroll
-  for (int i = 0; i < NF; ++i) {
-    int idx = i * NT + tid;
-    if (idx < F4) {
-      int r = idx / PR, c = (idx % PR) * 4;
-      int gk = k_base + r, gc = col_base + c;
-      bool ok = (gk < K && gc < N);
-      const float* src = ok ? (B + gk * N + gc) : B;
-      int bytes = ok ? 16 : 0;
-      uint32_t dst = __cvta_generic_to_shared(&sB[r][c]);
-      asm volatile("cp.async.ca.shared.global [%0], [%1], 16, %2;\n"
-                   ::"r"(dst), "l"(src), "r"(bytes));
-    }
-  }
-}
-
 // CUDA-core 路径：shared -> 寄存器 -> FMA
 template <int BK, int ALD, int BLD, int TM, int TN>
 __device__ __forceinline__ void compute_tile(
@@ -104,46 +82,6 @@ __device__ __forceinline__ void compute_tile(
       for (int n = 0; n < TN; ++n)
         accum[m][n] = __fmaf_rn(av[m], bv[n], accum[m][n]);
   }
-}
-
-// TensorCore 路径：从 shared 取 A/B fragment，累加一片 BK 进 c_frag
-template <int WM, int WN, int WK, int WTM, int WTN, int BK, int SA, int SB>
-__device__ __forceinline__ void wmma_compute_tile(
-    const float* base_a, const float* base_b, int warp_m, int warp_n,
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WM, WN, WK, float>
-        (&c_frag)[WTM][WTN]) {
-  namespace w = nvcuda::wmma;
-  #pragma unroll
-  for (int wk = 0; wk < BK / WK; ++wk) {
-    w::fragment<w::matrix_a, WM, WN, WK, w::precision::tf32, w::row_major> a_frag[WTM];
-    #pragma unroll
-    for (int i = 0; i < WTM; ++i) {
-      int row = warp_m * WTM * WM + i * WM;
-      w::load_matrix_sync(a_frag[i], base_a + row * SA + wk * WK, SA);
-    }
-    w::fragment<w::matrix_b, WM, WN, WK, w::precision::tf32, w::row_major> b_frag[WTN];
-    #pragma unroll
-    for (int j = 0; j < WTN; ++j) {
-      int col = warp_n * WTN * WN + j * WN;
-      w::load_matrix_sync(b_frag[j], base_b + wk * WK * SB + col, SB);
-    }
-    #pragma unroll
-    for (int i = 0; i < WTM; ++i)
-      #pragma unroll
-      for (int j = 0; j < WTN; ++j)
-        w::mma_sync(c_frag[i][j], a_frag[i], b_frag[j], c_frag[i][j]);
-  }
-}
-
-__device__ __forceinline__ void cp_async_commit() {
-  asm volatile("cp.async.commit_group;\n" ::);
-}
-template <int N>
-__device__ __forceinline__ void cp_async_wait() {
-  asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
-}
-__device__ __forceinline__ void cp_async_wait_all() {
-  asm volatile("cp.async.wait_group 0;\n" ::);
 }
 
 }  // namespace gemm

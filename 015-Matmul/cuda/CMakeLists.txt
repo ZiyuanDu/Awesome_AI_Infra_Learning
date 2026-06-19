@@ -7,9 +7,6 @@ set(CMAKE_CUDA_ARCHITECTURES "80" CACHE STRING "CUDA architectures (e.g. 80;89;9
 
 find_package(CUDAToolkit REQUIRED)
 
-# ================================================================
-# matmul_bench — 性能对比可执行文件
-# ================================================================
 add_executable(matmul_bench matmul_bench.cu)
 target_compile_options(matmul_bench PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-O3>)
 target_link_libraries(matmul_bench PRIVATE CUDA::cublas CUDA::cudart)
