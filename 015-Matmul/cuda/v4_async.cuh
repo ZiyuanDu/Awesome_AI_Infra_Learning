@@ -2,9 +2,9 @@
 #include <cuda_runtime.h>
 #include "common.cuh"
 
-template <int BM = 128, int BN = 128, int BK = 16,
-          int TM = 8, int TN = 8, int OFFSET = 4>
-__global__ void __launch_bounds__(256, 2)
+template <int BM = 64, int BN = 64, int BK = 16,
+          int TM = 8, int TN = 4, int OFFSET = 4>
+__global__ void __launch_bounds__(128, 2)
 sgemm_v4(const float* __restrict__ A,
          const float* __restrict__ B,
          float* __restrict__ C,
@@ -73,8 +73,8 @@ sgemm_v4(const float* __restrict__ A,
   }
 }
 
-template <int BM = 128, int BN = 128, int BK = 16,
-          int TM = 8, int TN = 8, int OFFSET = 4>
+template <int BM = 64, int BN = 64, int BK = 16,
+          int TM = 8, int TN = 4, int OFFSET = 4>
 inline void launch_sgemm_v4(const float* A, const float* B, float* C,
                             int M, int N, int K) {
   dim3 block(BN / TN, BM / TM);

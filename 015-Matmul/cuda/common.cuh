@@ -24,7 +24,7 @@ __device__ __forceinline__ void load_tile(
   }
 }
 
-// 寄存器 -> shared，直存（非转置）：dst[r][c] = reg
+// 寄存器 -> shared，直存）：dst[r][c] = reg
 template <int ROWS, int COLS, int NT, int NF, int LD>
 __device__ __forceinline__ void store_tile(
     float (*dst)[LD], int tid, const float4 (&reg)[NF]) {
@@ -55,14 +55,14 @@ __device__ __forceinline__ void store_a_T(
   }
 }
 
-// 寄存器 -> shared，B 直存（v3 用）
+// 寄存器 -> shared，B 直存
 template <int BK, int BN, int NT, int NF, int LD>
 __device__ __forceinline__ void store_b(
     float (*sB)[LD], int tid, const float4 (&reg)[NF]) {
   store_tile<BK, BN, NT, NF, LD>(sB, tid, reg);
 }
 
-// global B -> shared via cp.async，越界用 src-size=0 零填充（不读源、不留垃圾）
+// global B -> shared via cp.async，越界用 src-size=0 零填充
 template <int BK, int BN, int NT, int NF, int LD>
 __device__ __forceinline__ void load_b_async(
     const float* __restrict__ B, int N, int k_base, int col_base, int K,
@@ -84,7 +84,7 @@ __device__ __forceinline__ void load_b_async(
   }
 }
 
-// CUDA-core 路径：shared -> 寄存器 -> FMA（v3/v4 用）
+// CUDA-core 路径：shared -> 寄存器 -> FMA
 template <int BK, int ALD, int BLD, int TM, int TN>
 __device__ __forceinline__ void compute_tile(
     const float (*sA)[ALD], const float (*sB)[BLD],
@@ -106,7 +106,7 @@ __device__ __forceinline__ void compute_tile(
   }
 }
 
-// TensorCore 路径：从 shared 取 A/B fragment，累加一片 BK 进 c_frag（v5 用）
+// TensorCore 路径：从 shared 取 A/B fragment，累加一片 BK 进 c_frag
 template <int WM, int WN, int WK, int WTM, int WTN, int BK, int SA, int SB>
 __device__ __forceinline__ void wmma_compute_tile(
     const float* base_a, const float* base_b, int warp_m, int warp_n,

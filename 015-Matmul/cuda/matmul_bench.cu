@@ -51,16 +51,15 @@ int main() {
     printf("\n");
   };
 
-  run("SGEMM M=N=K=4096", 4096, 4096, 4096, [&](auto first, auto bench) {
+  run("SGEMM M=N=K=4096", 1024, 1024, 1024, [&](auto first, auto bench) {
     first("v0-naive",          launch_sgemm_v0);
     bench("v1-smem",           launch_sgemm_v1);
     bench("v1-1Dtiling",       launch_sgemm_v1_1<>);
     bench("v1-2Dtiling",       launch_sgemm_v1_2<>);
-    bench("v2-tile",           launch_sgemm_v2<64, 64, 16, 8, 8>);
-    bench("v3-dbuf",        launch_sgemm_v3<128, 128, 8, 8, 8, 4>);
-    bench("v4-async",       launch_sgemm_v4<128, 128, 8, 8, 8, 4>);
-    bench("v5-wmma",           launch_sgemm_v5);
+    bench("v2-tile",           launch_sgemm_v2<>);
+    bench("v3-dbuf",           launch_sgemm_v3<>);
     bench("cuBLAS(FP32)",      launch_cublas_sgemm_fp32);
+    bench("v5-wmma",           launch_sgemm_v5);
     bench("cuBLAS(TF32)",      launch_cublas_sgemm_tf32);
   });
 

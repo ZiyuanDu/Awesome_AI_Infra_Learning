@@ -3,7 +3,7 @@
 #include <mma.h>
 #include "common.cuh"
 
-template <int BM = 128, int BN = 128, int BK = 8, int K_STAGE = 2>
+template <int BM = 64, int BN = 64, int BK = 8, int K_STAGE = 1>
 __global__ void __launch_bounds__(256, 2)
 sgemm_v5(const float* __restrict__ A,
          const float* __restrict__ B,
@@ -98,7 +98,7 @@ sgemm_v5(const float* __restrict__ A,
 
 inline void launch_sgemm_v5(const float* A, const float* B, float* C,
                             int M, int N, int K) {
-  constexpr int BM = 128, BN = 128, BK = 8, K_STAGE = 2;
+  constexpr int BM = 64, BN = 64, BK = 8, K_STAGE = 1;
   constexpr size_t smem_sz = K_STAGE * (BM * BK + BK * BN) * sizeof(float);
   dim3 grid((N + BN - 1) / BN, (M + BM - 1) / BM);
   cudaFuncSetAttribute(sgemm_v5<BM, BN, BK, K_STAGE>,

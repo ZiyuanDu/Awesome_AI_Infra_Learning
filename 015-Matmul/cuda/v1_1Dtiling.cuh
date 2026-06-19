@@ -1,12 +1,13 @@
 #pragma once
 #include <cuda_runtime.h>
 
-template <int BM = 128, int BN = 64, int BK = 4, int TM = 16>
+template <int BM = 64, int BN = 64, int BK = 16, int TM = 16>
 __global__ void sgemm_v1_1(const float* __restrict__ A,
                            const float* __restrict__ B,
                            float* __restrict__ C,
                            int M, int N, int K) {
                             
+  constexpr int NT = (BM / TM) * BN;
   __shared__ float SA[BM][BK];
   __shared__ float SB[BK][BN];
 
@@ -17,26 +18,27 @@ __global__ void sgemm_v1_1(const float* __restrict__ A,
 
   float sum[TM] = {0.0f};
 
-  int tid = ty * blockDim.x + tx; 
+  int tid = ty * blockDim.x + tx;
 
   for (int tile = 0; tile < K; tile += BK) {
-    
-    int load_a_row = tid / BK;
-    int load_a_col = tid % BK;
-    
-    // 全局A的坐标
-    int ga_row = blockIdx.y * BM + load_a_row;
-    int ga_col = tile + load_a_col;
-    
-    SA[load_a_row][load_a_col] = (ga_row < M && ga_col < K) ? A[ga_row * K + ga_col] : 0.0f;
 
-    int load_b_row = tid / BN;
-    int load_b_col = tid % BN;
-    
-    int gb_row = tile + load_b_row;            
-    int gb_col = blockIdx.x * BN + load_b_col;
-    
-    SB[load_b_row][load_b_col] = (gb_row < K && gb_col < N) ? B[gb_row * N + gb_col] : 0.0f;
+    #pragma unroll
+    for (int i = tid; i < BM * BK; i += NT) {
+      int load_a_row = i / BK;
+      int load_a_col = i % BK;
+      int ga_row = blockIdx.y * BM + load_a_row;
+      int ga_col = tile + load_a_col;
+      SA[load_a_row][load_a_col] = (ga_row < M && ga_col < K) ? A[ga_row * K + ga_col] : 0.0f;
+    }
+
+    #pragma unroll
+    for (int i = tid; i < BK * BN; i += NT) {
+      int load_b_row = i / BN;
+      int load_b_col = i % BN;
+      int gb_row = tile + load_b_row;
+      int gb_col = blockIdx.x * BN + load_b_col;
+      SB[load_b_row][load_b_col] = (gb_row < K && gb_col < N) ? B[gb_row * N + gb_col] : 0.0f;
+    }
 
     __syncthreads();
 
@@ -63,7 +65,7 @@ __global__ void sgemm_v1_1(const float* __restrict__ A,
   }
 }
 
-template <int BM = 128, int BN = 64, int BK = 4, int TM = 16>
+template <int BM = 64, int BN = 64, int BK = 16, int TM = 16>
 inline void launch_sgemm_v1_1(const float* A, const float* B, float* C,
                               int M, int N, int K) {
   dim3 block(BN, BM / TM);                             

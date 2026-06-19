@@ -1,104 +1,96 @@
 #pragma once
 #include <cuda_runtime.h>
 
-template <int BM = 128, int BN = 128, int BK = 8, int TM = 8, int TN = 8>
+
+template <int BM = 64, int BN = 64, int BK = 32, int TM = 8, int TN = 4>
 __global__ void sgemm_v2(const float* __restrict__ A,
                          const float* __restrict__ B,
                          float* __restrict__ C,
                          int M, int N, int K) {
-                          
-  constexpr int FLOAT4      = 4;
-  constexpr int BLOCK_DIM_X = BN / TN;
-  constexpr int BLOCK_DIM_Y = BM / TM;
-  constexpr int NUM_THREADS = BLOCK_DIM_X * BLOCK_DIM_Y;
-  constexpr int A_TPR       = BK / FLOAT4;            // 搬 sA 每行的 float4 数
-  constexpr int B_TPR       = BN / FLOAT4;            // 搬 sB 每行的 float4 数
-  constexpr int A_ROW_STRIDE = NUM_THREADS / A_TPR;   // 一趟覆盖的 A 行数
-  constexpr int B_ROW_STRIDE = NUM_THREADS / B_TPR;   // 一趟覆盖的 B 行数
+
+  static_assert(BK % 4 == 0, "BK must be multiple of 4 for float4");
+  static_assert(BN % 4 == 0, "BN must be multiple of 4 for float4");
+  static_assert(TN % 4 == 0, "TN must be multiple of 4 for float4");
+
+  constexpr int NT = (BM / TM) * (BN / TN);
+  __shared__ float SA[BM][BK];
+  __shared__ float SB[BK][BN];
+
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+  int tid = ty * blockDim.x + tx;
+
+  float sum[TM][TN] = {{0.f}};
+
+  for (int tile = 0; tile < (K + BK - 1) / BK; ++tile) {
+    int gk = tile * BK;
 
 
-  __shared__ float sA[BM][BK];
-  __shared__ float sB[BK][BN];
-
-  const int bx = blockIdx.x, by = blockIdx.y;
-  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-
-  const int tr = threadIdx.y * TM;
-  const int tc = threadIdx.x * TN;
-
-  // 搬运身份：tid 在 tile 内的起始坐标
-  const int load_a_row = tid / A_TPR;
-  const int load_a_col = (tid % A_TPR) * FLOAT4;
-  const int load_b_row = tid / B_TPR;
-  const int load_b_col = (tid % B_TPR) * FLOAT4;
-
-  const int gb_col = bx * BN + load_b_col;
-
-  float accum[TM][TN] = {{0.f}};
-
-  for (int bk = 0; bk < (K + BK - 1) / BK; ++bk) {
-    const int gk = bk * BK;
-
-    // ---- 搬 A 片：沿行方向多趟覆盖 ----
     #pragma unroll
-    for (int off = 0; off < BM; off += A_ROW_STRIDE) {
-      const int a_row  = load_a_row + off;
-      const int ga_row = by * BM + a_row;
-      const int ga_col = gk + load_a_col;
+    for (int i = tid; i < BM * BK / 4; i += NT) {
+      int load_a_row = i / (BK / 4);
+      int load_a_col = (i % (BK / 4)) * 4;                  
+      int ga_row = blockIdx.y * BM + load_a_row;
+      int ga_col = gk + load_a_col;
       if (ga_row < M && ga_col < K)
-        *(float4*)&sA[a_row][load_a_col] =
-            *(const float4*)&A[ga_row * K + ga_col];
+        *(float4*)&SA[load_a_row][load_a_col] =              
+            *(const float4*)&A[ga_row * K + ga_col];        
       else
-        *(float4*)&sA[a_row][load_a_col] = make_float4(0, 0, 0, 0);
+        *(float4*)&SA[load_a_row][load_a_col] =              
+            make_float4(0.f, 0.f, 0.f, 0.f);
     }
 
-    // ---- 搬 B 片：沿行方向多趟覆盖 ----
     #pragma unroll
-    for (int off = 0; off < BK; off += B_ROW_STRIDE) {
-      const int b_row  = load_b_row + off;
-      const int gb_row = gk + b_row;
+    for (int i = tid; i < BK * BN / 4; i += NT) {
+      int load_b_row = i / (BN / 4);
+      int load_b_col = (i % (BN / 4)) * 4;                 
+      int gb_row = gk + load_b_row;
+      int gb_col = blockIdx.x * BN + load_b_col;
       if (gb_row < K && gb_col < N)
-        *(float4*)&sB[b_row][load_b_col] =
-            *(const float4*)&B[gb_row * N + gb_col];
+        *(float4*)&SB[load_b_row][load_b_col] =             
+            *(const float4*)&B[gb_row * N + gb_col];         
       else
-        *(float4*)&sB[b_row][load_b_col] = make_float4(0, 0, 0, 0);
+        *(float4*)&SB[load_b_row][load_b_col] =             
+            make_float4(0.f, 0.f, 0.f, 0.f);
     }
     __syncthreads();
+
 
     #pragma unroll
     for (int k = 0; k < BK; ++k) {
       #pragma unroll
-      for (int n = 0; n < TN; n += FLOAT4) {
-        float4 bv = *(float4*)&sB[k][tc + n];
+      for (int n = 0; n < TN; n += 4) {                     
+        float4 b_val = *(float4*)&SB[k][tx * TN + n];       
         #pragma unroll
         for (int m = 0; m < TM; ++m) {
-          float av = sA[tr + m][k];
-          accum[m][n + 0] += av * bv.x;
-          accum[m][n + 1] += av * bv.y;
-          accum[m][n + 2] += av * bv.z;
-          accum[m][n + 3] += av * bv.w;
+          float a_val = SA[ty * TM + m][k];
+          sum[m][n + 0] += a_val * b_val.x;                 
+          sum[m][n + 1] += a_val * b_val.y;
+          sum[m][n + 2] += a_val * b_val.z;
+          sum[m][n + 3] += a_val * b_val.w;
         }
       }
     }
     __syncthreads();
   }
 
+
   #pragma unroll
   for (int m = 0; m < TM; ++m) {
-    const int gc_row = by * BM + tr + m;
-    if (gc_row >= M) continue;
+    int row = blockIdx.y * BM + ty * TM + m;
+    if (row >= M) continue;
     #pragma unroll
-    for (int n = 0; n < TN; n += FLOAT4) {
-      const int gc_col = bx * BN + tc + n;
-      if (gc_col < N)
-        *(float4*)&C[gc_row * N + gc_col] =
-            make_float4(accum[m][n], accum[m][n + 1],
-                        accum[m][n + 2], accum[m][n + 3]);
+    for (int n = 0; n < TN; n += 4) {                      
+      int col = blockIdx.x * BN + tx * TN + n;
+      if (col < N)
+        *(float4*)&C[row * N + col] =                        
+            make_float4(sum[m][n],     sum[m][n + 1],
+                        sum[m][n + 2], sum[m][n + 3]);
     }
   }
 }
 
-template <int BM = 128, int BN = 128, int BK = 16, int TM = 8, int TN = 8>
+template <int BM = 64, int BN = 64, int BK = 32, int TM = 8, int TN = 4>
 inline void launch_sgemm_v2(const float* A, const float* B, float* C,
                             int M, int N, int K) {
   dim3 block(BN / TN, BM / TM);
