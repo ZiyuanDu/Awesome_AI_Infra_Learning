@@ -1,9 +1,6 @@
 #pragma once
 #include <cuda_runtime.h>
 
-// v0: Naive direct convolution (stride=1, pad=0)
-// Each thread computes one output element, iterating C,R,S from global memory
-// input[N][C][H][W] * weight[K][C][R][S] -> output[N][K][OH][OW]
 __global__ void conv_v0(const float* __restrict__ input,
                         const float* __restrict__ weight,
                         float* __restrict__ output,
@@ -11,7 +8,7 @@ __global__ void conv_v0(const float* __restrict__ input,
   int OH = W - S + 1, OW = W - S + 1;
   int ow = blockIdx.x * blockDim.x + threadIdx.x;
   int oh = blockIdx.y * blockDim.y + threadIdx.y;
-  int nk = blockIdx.z;  // flat: n * K + k
+  int nk = blockIdx.z;
   int n = nk / K, k = nk % K;
 
   if (ow < OW && oh < OH && n < N && k < K) {
