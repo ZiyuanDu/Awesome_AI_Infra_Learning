@@ -3,8 +3,8 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from PIL import Image 
 from torchvision.transforms import functional as TF
-from conv2d import im2col_conv2d
-
+from .conv2d import im2col_conv2d
+from ttriton.conv_v0 import triton_conv2d
 def gaussian_kernel_2d(size, sigma=1.0):
     """生成一个 2D 高斯核，形状为 (size, size)"""
     ax = torch.arange(size, dtype=torch.float32) - size // 2
@@ -33,7 +33,7 @@ def compare_conv(image_path, kernel_size=3, sigma=1.0):
 
     # 5. 自定义卷积
     with torch.no_grad():
-        naive_res = im2col_conv2d(img_tensor, weight, bias=None, stride=1, padding=pad)
+        naive_res = triton_conv2d(img_tensor, weight, bias=None, stride=1, padding=pad)
 
     # 6. 检查数值是否一致
     is_close = torch.allclose(official_res, naive_res, atol=1e-5)
