@@ -1,6 +1,11 @@
-# 016-Conv — CUDA / Triton / PyTorch Conv2D
+# 016-Conv — Triton / PyTorch Conv2D
 
-高性能 Conv2D (stride=1, pad=0) 的 CUDA C++、Triton、PyTorch 三版本对比实现，展示从 naive direct convolution 到 shared memory tiling 的完整优化历程。
+Conv2D (stride=1) 的 Triton 与 PyTorch 对比实现，展示从 naive direct convolution 到
+Implicit GEMM 的完整优化历程。递进 5 版，每步只引入一个概念，性能单调递增。
+
+> **关于 GPU 硬件层优化**（shared memory、tiling、double buffering、cp.async、Tensor Core）
+> 已在 [015-Matmul](../015-Matmul) 的 CUDA 实现里完整讲解。本章聚焦**算子层**的优化思路
+> （数据复用 / 算术强度 / im2col / 隐式 GEMM），用 Triton 表达以避免与矩阵乘的硬件细节重复。
 
 ## 项目结构
 
@@ -8,31 +13,34 @@
 016-Conv/
 ├── README.md
 │
-├── triton/                          # Triton 实现
-│   └── conv_v0.py                   # naive tiled → im2col-style → autotuned + benchmark
+├── ttriton/                         # Triton 实现 (递进优化 5 版)
+│   ├── common.py                    # 公共工具:参数解析/计时/显存/校验/表格
+│   ├── conv_v0_naive.py             # v0 朴素直接卷积 (基线)
+│   ├── conv_v1_spatial.py           # v1 空间分块 → 数据复用
+│   ├── conv_v2_tiled.py             # v2 空间+通道分块 → 提高算术强度
+│   ├── conv_v3_im2col.py            # v3 im2col + GEMM (cuBLAS)
+│   ├── conv_v4_implicit_gemm.py     # v4 Implicit GEMM (cuDNN 主力算法)
+│   └── bench.py                     # 正确性 + 性能 + 显存对比 benchmark
 │
-├── cuda/                            # CUDA 手写实现 (header-only)
-│   ├── CMakeLists.txt               # CMake 构建
-│   ├── common.cuh                   # 共享辅助函数 (load_tile, store_tile等)
-│   ├── bench.cuh                    # Benchmark 基础设施 + cuBLAS wrapper
-│   ├── conv_bench.cu                # 主 benchmark 程序
-│   ├── v0_naive.cuh                 # Naive direct convolution
-│   ├── v1_im2col.cuh                # im2col + shared-memory SGEMM
-│   ├── v2_tiled.cuh                 # K-tiled + register accumulation
-│   └── v3_smem.cuh                  # Shared memory input tiling + channel blocking
+├── ppytorch/                        # PyTorch 参考实现
+│   ├── conv2d.py                    # im2col 原理 + conv2d 等价性验证
+│   └── bench.py                     # PyTorch 性能对比
 │
-└── ppytorch/                        # PyTorch 参考实现
-    └── conv.ipynb                   # im2col原理 + 各种conv参数 + 性能对比
+└── slides/                          # 配套课件 (卷积/滤波/边缘检测/CNN 等)
 ```
 
-## CUDA Kernel 优化路线
+## Triton Kernel 优化路线
 
-| 版本 | 技术 | 关键优化 |
+| 版本 | 技术 | 核心思想 |
 |------|------|----------|
-| **v0** | Naive direct convolution | 基线：每线程直接global memory读写，遍历C,R,S |
-| **v1** | im2col + SGEMM | im2col将卷积转为矩阵乘法，32×32 shared memory tiled SGEMM |
-| **v2** | K-tiled + register | K维度分块(BK=4)，寄存器累加，减少weight重复读取 |
-| **v3** | Shared memory tiling | 输入窗口缓存到shared memory，block内线程共享input数据；C维度分块(BC)和K维度线程展开(TM) |
+| **v0** | Naive direct | 每 program 一个输出元素，零复用（基线） |
+| **v1** | Spatial tiling | 一 program 算 TILE_H×TILE_W 输出块 → 输入被相邻像素**复用** |
+| **v2** | Spatial + channel | 再对 C_out 分块，一块输入服务 BLOCK_K 个通道 → 提高**算术强度**（GEMM 雏形） |
+| **v3** | im2col + GEMM | 换思路：`F.unfold` 摊平成矩阵，交给 cuBLAS。代价是 col 显存物化 |
+| **v4** | Implicit GEMM | 把 im2col 融进 `tl.dot`，坐标现算不落地 → cuDNN 主力算法 |
+
+两条正交的主线：**v0→v1→v2** 是"直接卷积 + 分块复用"，**v3→v4** 是"归约成矩阵乘"。
+v2 的外积累加是 v4 `tl.dot` 的手写雏形，二者串起了从 direct 到 GEMM 的认知桥梁。
 
 ## 快速开始
 
@@ -40,150 +48,72 @@
 
 | 组件 | 要求 |
 |------|------|
-| CUDA Toolkit | ≥ 11.0 (sm_80+ 推荐) |
-| Triton | `pip install triton` |
-| PyTorch | `pip install torch` (Triton benchmark 需要) |
-| CMake | ≥ 3.18 |
+| PyTorch | `pip install torch` |
+| Triton | `pip install triton` (随 PyTorch 附带) |
+| rich | `pip install rich` (benchmark 表格渲染) |
 
-### Triton 版本
-
-```bash
-# 完整测试：正确性 + 性能
-python triton/conv_v0.py
-
-# 仅性能 benchmark
-python triton/conv_v0.py --bench-only
-
-# 生成性能曲线图 (需要 pandas)
-python triton/conv_v0.py --plot
-```
-
-### CUDA 版本
+### 运行
 
 ```bash
-cd cuda
+# 完整 benchmark：正确性 + 性能 + 显存对比 (5 版 vs cuDNN)
+python -m ttriton.bench
 
-# 编译 (默认 sm_80，可在 CMakeLists.txt 中修改 CMAKE_CUDA_ARCHITECTURES)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+# 单独验证某一版的正确性 (每个文件含教学注释)
+python -m ttriton.conv_v0_naive
+python -m ttriton.conv_v4_implicit_gemm
 
-# 运行全部 benchmark
-./build/conv_bench
-
-# 或通过 CMake target 运行
-cmake --build build --target run_conv
+# PyTorch im2col 原理演示
+python ppytorch/conv2d.py
 ```
 
-**指定 GPU 架构：**
+## Benchmark 结果 (RTX 4090 D, sm_89, TF32)
 
-```bash
-# sm_89 (RTX 4090)
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=89
-cmake --build build -j
-
-# sm_90 (H100)
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=90
-cmake --build build -j
-```
-
-### PyTorch 版本
-
-```bash
-jupyter notebook ppytorch/conv.ipynb
-```
-
-## Benchmark 结果 (RTX 4090 D, sm_89, cuDNN v9)
+compute-bound 问题集，GFLOPS 越高越好。v0→v4 严格单调，v4 Implicit GEMM 在 3×3 上超过 cuDNN：
 
 ```
---- ResNet mid: N=1 C=64 H=56 W=56 K=64 R=3 S=3  (0.21 GFLOPs) ---
-  kernel                       time     GFLOPS  vs v0
-  v0-naive                 0.0972 ms   2211.65 GFLOPS  ref
-  v1-im2col+gemm(f4)       0.0869 ms   2473.81 GFLOPS  0.00e+00
-  v2-tiled(BK=4)           0.0567 ms   3791.80 GFLOPS  0.00e+00
-  v3-smem(BC=16,BK=16)     0.0563 ms   3815.92 GFLOPS  0.00e+00
-  cuBLAS+im2col(FP32)      0.0571 ms   3763.93 GFLOPS  9.40e-04
-  cuDNN(FP32)              0.0222 ms   9675.21 GFLOPS  0.00e+00
-
---- First layer: N=1 C=3 H=224 W=224 K=64 R=7 S=7  (0.89 GFLOPs) ---
-  kernel                       time     GFLOPS  vs v0
-  v0-naive                 0.2108 ms   4242.45 GFLOPS  ref
-  v1-im2col+gemm(f4)       0.2014 ms   4440.20 GFLOPS  0.00e+00
-  v2-tiled(BK=4)           0.1390 ms   6430.91 GFLOPS  0.00e+00
-  v3-smem(BC=4,BK=16)      0.0782 ms  11434.51 GFLOPS  0.00e+00
-  cuBLAS+im2col(FP32)      0.0527 ms  16970.18 GFLOPS  0.00e+00
-  cuDNN(FP32)              0.0495 ms  18080.02 GFLOPS  0.00e+00
-
---- Deep layer: N=1 C=128 H=28 W=28 K=128 R=3 S=3  (0.20 GFLOPs) ---
-  kernel                       time     GFLOPS  vs v0
-  v0-naive                 0.0753 ms   2648.10 GFLOPS  ref
-  v1-im2col+gemm(f4)       0.1521 ms   1310.59 GFLOPS  0.00e+00
-  v2-tiled(BK=4)           0.1027 ms   1940.67 GFLOPS  0.00e+00
-  v3-smem(BC=16,BK=16)     0.1016 ms   1962.21 GFLOPS  0.00e+00
-  cuBLAS+im2col(FP32)      0.0888 ms   2244.27 GFLOPS  1.41e-03
-  cuDNN(FP32)              0.0332 ms   5999.63 GFLOPS  0.00e+00
-
---- Batch: N=4 C=32 H=32 W=32 K=64 R=3 S=3  (0.13 GFLOPs) ---
-  kernel                       time     GFLOPS  vs v0
-  v0-naive                 0.0455 ms   2917.42 GFLOPS  ref
-  v2-tiled(BK=4)           0.0307 ms   4317.12 GFLOPS  0.00e+00
-  v3-smem(BC=16,BK=16)     0.0295 ms   4503.13 GFLOPS  0.00e+00
-  cuDNN(FP32)              0.0199 ms   6652.23 GFLOPS  0.00e+00
+Problem                          v0      v1      v2       v3        v4      cuDNN
+ResNet-mid 3×3 C=64  56×56 ×16   23    3777    5081     6213     40473    34898
+Deep-layer 3×3 C=128 28×28 ×32   23    3156    4166    10789     54368    47485
+Wide-conv  3×3 C=256 28×28 ×8    23    3120    4126    19138     49113    47172
+First-layer 7×7 C=3  224   ×8    30    5527    7968     4843*    15795    16021
+                                                                  (GFLOPS)
+* v3 im2col 在 7×7 上反而慢于 v2：kernel 越大，col 矩阵物化越大 (峰值 648 MB)，
+  访存成本压过 GEMM 收益。这是 im2col 的经典短板，v4 隐式 GEMM 不物化故不受影响。
 ```
 
-## vs cuDNN / cuBLAS 分析
+> **为什么用 compute-bound 问题集？** 小问题（<1 GFLOP）在现代 GPU 上是延迟/启动瓶颈，
+> 算术强度优化（v2）看不出差别，甚至因寄存器压力比 v1 慢，破坏"越优化越快"的教学叙事。
+> 只有放大 batch / 通道到计算密集，才能显出 v0→v4 的单调阶梯。
 
-### 完整对比表
+## 关键教学点
 
-| 测试 | v3-smem | cuBLAS+im2col | cuDNN | v3/cuDNN | v3/cuBLAS |
-|------|---------|---------------|-------|----------|-----------|
-| 3×3, 64→64 | **3816** | 3764 | 9675 | 39% | **101%** |
-| 7×7, 3→64 | 11435 | **16970** | 18080 | 63% | 67% |
-| 3×3, 128→128 | 1962 | **2244** | 6000 | 33% | 87% |
-| N=4, 3×3 | 4503 | — | 6652 | 68% | — |
+1. **v0→v1 是最大跳变 (~100–180x)**：不是算得更少，而是把每输出一次的独立访存摊薄到
+   一个 tile，相邻输出复用输入，占用率和带宽利用率大幅提升。
 
-### 关键发现
+2. **v2 提高算术强度**：一次输入访存服务 BLOCK_K 个输出通道（外积累加），FLOP/Byte 随
+   BLOCK_K 线性提高。这是 GEMM 的雏形。
 
-1. **v3-smem ≈ cuBLAS im2col+GEMM (FP32)**: 对3×3 kernel，v3-smem (3816 GFLOPS) 与 cuBLAS (3764) 持平。cuBLAS是NVIDIA工程师多年优化的SGEMM——**v3-smem证明手写tiled direct conv可以达到甚至超过im2col+cuBLAS的性能**。
+3. **v3 vs v4 的显存差距**：都是"卷积=矩阵乘"，但 v3 把 im2col 的列矩阵物化到显存
+   （放大 kH·kW 倍），v4 用坐标现算把展开融进 `tl.dot`，不落地。峰值显存差 10 倍，
+   这正是 cuDNN 用 Implicit GEMM 而非朴素 im2col 的原因。
 
-2. **cuDNN优势来自算法层面**:
-   - 3×3 kernel: cuDNN用Winograd F(2×2,3×3)减少2.25x算术量。3816 × 2.25 = 8586 ≈ 9675 (89%)，差距几乎完全由Winograd解释
-   - 7×7 kernel: cuDNN用implicit GEMM + Tensor Cores(FP16)，~2x吞吐优势。11435 × 1.6 ≈ 18296 ≈ 18080
-
-3. **cuBLAS+im2col对特定维度极优**: 7×7 (M=64, N=47524, K=147)的GEMM维度非常适合cuBLAS(大N=大量并行度)，v3-smem无法超越这种维度的cuBLAS GEMM
-
-4. **v0-naive在C≥128时最优**: GPU L2 cache顺序预取对大量channel的串行访问极其友好，tiled kernel的shared memory/sync开销反而不利
-
-### 如果想进一步逼近cuDNN
-
-| 技术 | 预期加速 | 复杂度 | 适用场景 |
-|------|---------|--------|----------|
-| **Winograd** F(2×2,3×3) | 1.5-2.0x | 高 | 仅3×3 stride=1 |
-| **WMMA Tensor Cores** (FP16) | 1.5-2.0x | 中 | sm_70+ |
-| **Implicit GEMM** (CUTLASS风格) | 1.3-1.5x | 高 | 通用 |
-| **Double buffering** shared memory | 1.1-1.2x | 低 | sm_80+ (cp.async) |
-
-## 代码设计理念
-
-- **Header-only CUDA：** 所有 CUDA kernel 定义在 `.cuh` 文件中，main 文件直接 `#include` 即可。
-- **统一 benchmark 框架：** `bench.cuh` 提供模板化的 `bench_conv` / `bench_conv_first` 函数，自动管理 GPU 内存、计时代码、误差验证。
-- **GPU 参考值：** 用 v0 的输出作为所有后续 kernel 的 reference，避免引入 CPU 计算误差。
-- **模板化 tile 参数：** v2/v3 内核使用 template 参数控制 tile size，方便 auto-tuning 和适配不同输入规模。
-- **Triton autotuning：** 对 BLOCK_OH / BLOCK_OW / BLOCK_K / BLOCK_C 进行自动搜索，找到最优配置。
-- **PyTorch 对比：** `ppytorch/conv.ipynb` 展示 im2col 原理、手动实现与 `torch.nn.functional.conv2d` 的等价性，以及各种 conv 参数用法。
+4. **TF32 精度**：`tl.dot` 在 Ampere+ 默认走 TF32 Tensor Core，逐元素绝对误差可达 ~1e-2，
+   但归一化误差 (nrmse) <1e-3。正确性校验统一用 `common.assert_close`（nrmse 口径），
+   与 benchmark 判定一致。要更高精度可传 `allow_tf32=False`。
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `cuda/v0_naive.cuh` | Naive direct conv: 每线程一输出元素，全global memory |
-| `cuda/v1_im2col.cuh` | im2col kernel + 32×32 tiled SGEMM kernel |
-| `cuda/v2_tiled.cuh` | K维度分块(BK) + 寄存器累加 |
-| `cuda/v3_smem.cuh` | Shared memory input tiling + C维度分块(BC) + K线程展开(TM) |
-| `cuda/common.cuh` | Shared memory helper (load_tile, store_tile, load_input_window) |
-| `cuda/bench.cuh` | Benchmark 计时、误差计算、cuBLAS wrapper |
-| `cuda/conv_bench.cu` | 主 benchmark：多种卷积规模、多 kernel 对比 |
-| `triton/conv_v0.py` | Triton 三版本实现 + 正确性测试 + 性能 benchmark |
-| `ppytorch/conv.ipynb` | PyTorch conv2d 参考实现 + im2col 原理讲解 |
+| `ttriton/conv_v0_naive.py` | v0 朴素直接卷积：每 program 一输出元素，零复用 |
+| `ttriton/conv_v1_spatial.py` | v1 空间分块：TILE_H×TILE_W 输出块，输入复用 |
+| `ttriton/conv_v2_tiled.py` | v2 空间+通道分块：外积累加，提高算术强度 |
+| `ttriton/conv_v3_im2col.py` | v3 im2col + cuBLAS GEMM (F.unfold + matmul) |
+| `ttriton/conv_v4_implicit_gemm.py` | v4 Implicit GEMM：tl.dot + 隐式 im2col |
+| `ttriton/common.py` | 参数解析 / 计时 / 显存 / 正确性校验 / Rich 表格 |
+| `ttriton/bench.py` | Triton benchmark：5 版 vs cuDNN 对比 |
+| `ppytorch/conv2d.py` | PyTorch conv2d 参考 + im2col 原理讲解 |
+| `ppytorch/bench.py` | PyTorch 性能对比 |
 
 ## License
 
