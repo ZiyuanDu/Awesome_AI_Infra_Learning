@@ -29,19 +29,6 @@ Implicit GEMM 的完整优化历程。
 └── slides/                          # 配套课件 (卷积/滤波/边缘检测/CNN 等)
 ```
 
-## Triton Kernel 优化路线
-
-| 版本 | 技术 | 核心思想 |
-|------|------|----------|
-| **v0** | Naive direct | 每 program 一个输出元素，零复用（基线） |
-| **v1** | Spatial tiling | 一 program 算 TILE_H×TILE_W 输出块 → 输入被相邻像素**复用** |
-| **v2** | Spatial + channel | 再对 C_out 分块，一块输入服务 BLOCK_K 个通道 → 提高**算术强度**（GEMM 雏形） |
-| **v3** | im2col + GEMM | 换思路：`F.unfold` 摊平成矩阵，交给 cuBLAS。代价是 col 显存物化 |
-| **v4** | Implicit GEMM | 把 im2col 融进 `tl.dot`，坐标现算不落地 → cuDNN 主力算法 |
-
-两条正交的主线：**v0→v1→v2** 是"直接卷积 + 分块复用"，**v3→v4** 是"归约成矩阵乘"。
-v2 的外积累加是 v4 `tl.dot` 的手写雏形，二者串起了从 direct 到 GEMM 的认知桥梁。
-
 ## 快速开始
 
 ### 环境要求
@@ -58,7 +45,7 @@ v2 的外积累加是 v4 `tl.dot` 的手写雏形，二者串起了从 direct �
 # 完整 benchmark：正确性 + 性能 + 显存对比 (5 版 vs cuDNN)
 python -m ttriton.bench
 
-# 单独验证某一版的正确性 (每个文件含教学注释)
+# 单独验证某一版的正确性
 python -m ttriton.conv_v0_naive
 python -m ttriton.conv_v4_implicit_gemm
 
