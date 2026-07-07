@@ -1,9 +1,9 @@
 # 016-Conv — Triton / PyTorch Conv2D
 
 Conv2D (stride=1) 的 Triton 与 PyTorch 对比实现，展示从 naive direct convolution 到
-Implicit GEMM 的完整优化历程。递进 5 版，每步只引入一个概念，性能单调递增。
+Implicit GEMM 的完整优化历程。
 
-> **关于 GPU 硬件层优化**（shared memory、tiling、double buffering、cp.async、Tensor Core）
+> **关于 GPU 硬件层优化**
 > 已在 [015-Matmul](../015-Matmul) 的 CUDA 实现里完整讲解。本章聚焦**算子层**的优化思路
 > （数据复用 / 算术强度 / im2col / 隐式 GEMM），用 Triton 表达以避免与矩阵乘的硬件细节重复。
 
@@ -13,13 +13,13 @@ Implicit GEMM 的完整优化历程。递进 5 版，每步只引入一个概念
 016-Conv/
 ├── README.md
 │
-├── ttriton/                         # Triton 实现 (递进优化 5 版)
+├── ttriton/                         # Triton 实现 
 │   ├── common.py                    # 公共工具:参数解析/计时/显存/校验/表格
 │   ├── conv_v0_naive.py             # v0 朴素直接卷积 (基线)
 │   ├── conv_v1_spatial.py           # v1 空间分块 → 数据复用
 │   ├── conv_v2_tiled.py             # v2 空间+通道分块 → 提高算术强度
 │   ├── conv_v3_im2col.py            # v3 im2col + GEMM (cuBLAS)
-│   ├── conv_v4_implicit_gemm.py     # v4 Implicit GEMM (cuDNN 主力算法)
+│   ├── conv_v4_implicit_gemm.py     # v4 Implicit GEMM
 │   └── bench.py                     # 正确性 + 性能 + 显存对比 benchmark
 │
 ├── ppytorch/                        # PyTorch 参考实现
@@ -66,55 +66,87 @@ python -m ttriton.conv_v4_implicit_gemm
 python ppytorch/conv2d.py
 ```
 
-## Benchmark 结果 (RTX 4090 D, sm_89, TF32)
+## 性能结果
+```
+❯ python -m ttriton.bench
 
-compute-bound 问题集，GFLOPS 越高越好。v0→v4 严格单调，v4 Implicit GEMM 在 3×3 上超过 cuDNN：
+╔═════════════════════════════════════════╗
+║                                         ║
+║   Triton Conv2D Benchmark               ║
+║   NVIDIA GeForce RTX 4090 D  ·  sm_89   ║
+║                                         ║
+║                                         ║
+╚═════════════════════════════════════════╝
+
+─────────────────────────────────────────────────── ResNet-mid   3×3  C=64→64    56×56 ×16 ───────────────────────────────────────────────────
+                  ResNet-mid   3×3  C=64→64    56×56 ×16                  
+                                                                          
+ Kernel                    Time (ms)       GFLOPS     Peak Mem    Status  
+ ──────────────────────────────────────────────────────────────────────── 
+ v0-naive                   147.2876         23.4         12.0      ✓     
+ v1-空间分块                  0.9017       3815.1         12.0      ✓     
+ v2-空间+通道分块             0.6692       5139.9         12.0      ✓     
+ v3-im2col+GEMM               0.5541       6208.4        228.4      ✓     
+ v4-ImplicitGEMM              0.0850      40453.2         24.0      ✓     
+ torch(cuDNN)                 0.0988      34810.7         36.0      —     
+                                                                          
+16×64×54×54  ·  3.440 GFLOPS                                              
+
+─────────────────────────────────────────────────── Deep-layer   3×3  C=128→128  28×28 ×32 ───────────────────────────────────────────────────
+                  Deep-layer   3×3  C=128→128  28×28 ×32                  
+                                                                          
+ Kernel                    Time (ms)       GFLOPS     Peak Mem    Status  
+ ──────────────────────────────────────────────────────────────────────── 
+ v0-naive                   274.3413         23.3         10.6      ✓     
+ v1-空间分块                  2.0230       3153.5         10.6      ✓     
+ v2-空间+通道分块             1.5068       4233.7         10.6      ✓     
+ v3-im2col+GEMM               0.5908      10797.9        213.1      ✓     
+ v4-ImplicitGEMM              0.1190      53623.8         21.1      ✓     
+ torch(cuDNN)                 0.1342      47521.1         23.4      —     
+                                                                          
+32×128×26×26  ·  6.380 GFLOPS                                             
+
+─────────────────────────────────────────────────── Wide-conv    3×3  C=256→256  28×28 ×8 ────────────────────────────────────────────────────
+                  Wide-conv    3×3  C=256→256  28×28 ×8                   
+                                                                          
+ Kernel                    Time (ms)       GFLOPS     Peak Mem    Status  
+ ──────────────────────────────────────────────────────────────────────── 
+ v0-naive                   275.4389         23.2          5.3      ✓     
+ v1-空间分块                  2.0507       3110.9          5.3      ✓     
+ v2-空间+通道分块             1.5336       4160.0          5.3      ✓     
+ v3-im2col+GEMM               0.3331      19152.8        106.6      ✓     
+ v4-ImplicitGEMM              0.1306      48862.9         10.6      ✓     
+ torch(cuDNN)                 0.1356      47040.3         18.9      —     
+                                                                          
+8×256×26×26  ·  6.380 GFLOPS                                              
+
+─────────────────────────────────────────────────── First-layer  7×7  C=3→64    224×224 ×8 ───────────────────────────────────────────────────
+                  First-layer  7×7  C=3→64    224×224 ×8                  
+                                                                          
+ Kernel                    Time (ms)       GFLOPS     Peak Mem    Status  
+ ──────────────────────────────────────────────────────────────────────── 
+ v0-naive                   247.6081         30.5        103.3      ✓     
+ v1-空间分块                  1.4071       5367.8        103.3      ✓     
+ v2-空间+通道分块             0.9490       7958.9        103.3      ✓     
+ v3-im2col+GEMM               1.5595       4843.1        648.0      ✓     
+ v4-ImplicitGEMM              0.4801      15732.8        201.3      ✓     
+ torch(cuDNN)                 0.4691      16101.0         98.3      —     
+                                                                          
+8×64×224×224  ·  7.553 GFLOPS                                             
+
+──────────────────────────────────────────────────────────── Speedup vs v0-naive ─────────────────────────────────────────────────────────────
+Speedup vs v0-naive                                                                                                                     
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Problem                                ┃ v0-naive ┃ v1-空间分块 ┃ v2-空间+通道分块 ┃ v3-im2col+GEMM ┃ v4-ImplicitGEMM ┃ torch(cuDNN) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ ResNet-mid   3×3  C=64→64    56×56 ×16 │   1.0x   │   163.4x    │      220.1x      │     265.8x     │     1732.1x     │   1490.5x    │
+│ Deep-layer   3×3  C=128→128  28×28 ×32 │   1.0x   │   135.6x    │      182.1x      │     464.3x     │     2306.0x     │   2043.6x    │
+│ Wide-conv    3×3  C=256→256  28×28 ×8  │   1.0x   │   134.3x    │      179.6x      │     826.9x     │     2109.7x     │   2031.0x    │
+│ First-layer  7×7  C=3→64    224×224 ×8 │   1.0x   │   176.0x    │      260.9x      │     158.8x     │     515.8x      │    527.8x    │
+└────────────────────────────────────────┴──────────┴─────────────┴──────────────────┴────────────────┴─────────────────┴──────────────┘
+
+
+╭─ ~/code/mycuda/Kernels/016-Conv main !15 ?13 ···························· 1m 29s  mycuda  base xingyongwang@bupt-hpc-gpu-1 07:37:15 PM ─╮
+╰─❯                                                                                                                                        ─╯
 
 ```
-Problem                          v0      v1      v2       v3        v4      cuDNN
-ResNet-mid 3×3 C=64  56×56 ×16   23    3777    5081     6213     40473    34898
-Deep-layer 3×3 C=128 28×28 ×32   23    3156    4166    10789     54368    47485
-Wide-conv  3×3 C=256 28×28 ×8    23    3120    4126    19138     49113    47172
-First-layer 7×7 C=3  224   ×8    30    5527    7968     4843*    15795    16021
-                                                                  (GFLOPS)
-* v3 im2col 在 7×7 上反而慢于 v2：kernel 越大，col 矩阵物化越大 (峰值 648 MB)，
-  访存成本压过 GEMM 收益。这是 im2col 的经典短板，v4 隐式 GEMM 不物化故不受影响。
-```
-
-> **为什么用 compute-bound 问题集？** 小问题（<1 GFLOP）在现代 GPU 上是延迟/启动瓶颈，
-> 算术强度优化（v2）看不出差别，甚至因寄存器压力比 v1 慢，破坏"越优化越快"的教学叙事。
-> 只有放大 batch / 通道到计算密集，才能显出 v0→v4 的单调阶梯。
-
-## 关键教学点
-
-1. **v0→v1 是最大跳变 (~100–180x)**：不是算得更少，而是把每输出一次的独立访存摊薄到
-   一个 tile，相邻输出复用输入，占用率和带宽利用率大幅提升。
-
-2. **v2 提高算术强度**：一次输入访存服务 BLOCK_K 个输出通道（外积累加），FLOP/Byte 随
-   BLOCK_K 线性提高。这是 GEMM 的雏形。
-
-3. **v3 vs v4 的显存差距**：都是"卷积=矩阵乘"，但 v3 把 im2col 的列矩阵物化到显存
-   （放大 kH·kW 倍），v4 用坐标现算把展开融进 `tl.dot`，不落地。峰值显存差 10 倍，
-   这正是 cuDNN 用 Implicit GEMM 而非朴素 im2col 的原因。
-
-4. **TF32 精度**：`tl.dot` 在 Ampere+ 默认走 TF32 Tensor Core，逐元素绝对误差可达 ~1e-2，
-   但归一化误差 (nrmse) <1e-3。正确性校验统一用 `common.assert_close`（nrmse 口径），
-   与 benchmark 判定一致。要更高精度可传 `allow_tf32=False`。
-
-## 文件说明
-
-| 文件 | 说明 |
-|------|------|
-| `ttriton/conv_v0_naive.py` | v0 朴素直接卷积：每 program 一输出元素，零复用 |
-| `ttriton/conv_v1_spatial.py` | v1 空间分块：TILE_H×TILE_W 输出块，输入复用 |
-| `ttriton/conv_v2_tiled.py` | v2 空间+通道分块：外积累加，提高算术强度 |
-| `ttriton/conv_v3_im2col.py` | v3 im2col + cuBLAS GEMM (F.unfold + matmul) |
-| `ttriton/conv_v4_implicit_gemm.py` | v4 Implicit GEMM：tl.dot + 隐式 im2col |
-| `ttriton/common.py` | 参数解析 / 计时 / 显存 / 正确性校验 / Rich 表格 |
-| `ttriton/bench.py` | Triton benchmark：5 版 vs cuDNN 对比 |
-| `ppytorch/conv2d.py` | PyTorch conv2d 参考 + im2col 原理讲解 |
-| `ppytorch/bench.py` | PyTorch 性能对比 |
-
-## License
-
-MIT
