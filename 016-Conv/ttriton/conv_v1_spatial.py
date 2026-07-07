@@ -79,4 +79,4 @@ if __name__ == "__main__":
     out = conv_v1(x, w, b)
     ref = torch.nn.functional.conv2d(x, w, b)
     assert_close(out, ref, name="v1")
-    print("✅ v1 空间分块 (autotuned) 验证通过")
+    print("v1 空间分块验证通过")

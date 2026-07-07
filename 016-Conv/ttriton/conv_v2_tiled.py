@@ -86,4 +86,4 @@ if __name__ == "__main__":
     out = conv_v2(x, w, b)
     ref = torch.nn.functional.conv2d(x, w, b)
     assert_close(out, ref, name="v2")
-    print("✅ v2 空间+通道分块 (autotuned) 验证通过")
+    print("空间+通道分块验证通过")

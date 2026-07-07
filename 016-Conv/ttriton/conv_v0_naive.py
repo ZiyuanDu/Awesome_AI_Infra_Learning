@@ -54,4 +54,4 @@ if __name__ == "__main__":
     out = conv_v0(x, w, b, padding=1)
     ref = torch.nn.functional.conv2d(x, w, b, padding=1)
     assert_close(out, ref, name="v0")
-    print("✅ v0 朴素卷积 验证通过")
+    print("朴素卷积验证通过")

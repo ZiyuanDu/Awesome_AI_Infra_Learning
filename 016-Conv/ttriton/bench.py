@@ -1,5 +1,3 @@
-"""Triton Conv2D Benchmark — 正确性 + 性能 + 显存对比"""
-
 import torch, torch.nn.functional as F, sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -27,7 +25,6 @@ PROBLEMS = [
     ("First-layer  7×7  C=3→64    224×224 ×8",  8,   3, 224, 224,  64, 7, 7, 3),
 ]
 
-# (name, fn) — fn(x, w, b, stride, padding) → NCHW 输出
 KERNELS = [
     ("v0-naive",         conv_v0),
     ("v1-空间分块",        conv_v1),
@@ -38,7 +35,6 @@ KERNELS = [
 
 
 def bench_one(name, fn, torch_ref, gflop_val):
-    """对单个 kernel 计时+测显存+测误差。fn 为无参 callable"""
     ms = benchmark_ms(fn, ())
     mem, out = measure_peak_memory(fn, ())
     err = nrmse(out, torch_ref)
@@ -88,13 +84,11 @@ def run():
 
         console.print(build_result_table(prob_name, shape_info, gflop_val, rows))
 
-        # 收集加速比
         baseline = rows[0][1]
         if baseline > 0:
             all_speedups.append(
                 [prob_name] + [baseline / r[1] if r[1] > 0 else 0 for r in rows])
 
-    # 加速比总览
     if all_speedups:
         console.print()
         console.print(Rule(title="[bold bright_cyan]Speedup vs v0-naive[/]",

@@ -27,4 +27,4 @@ if __name__ == "__main__":
     out = conv_v3(x, w, b, padding=3)
     ref = F.conv2d(x, w, b, padding=3)
     assert_close(out, ref, name="v3")
-    print("✅ v3 im2col+GEMM 验证通过")
+    print("im2col+GEMM验证通过")
