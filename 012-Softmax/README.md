@@ -12,9 +12,9 @@
 │
 ├── triton/                            # Triton / PyTorch 版本
 │   ├── softmax.py                     # Triton 实现: fuse, tile, online, online_v3
-│   └── softmax_torch.py               # 纯 PyTorch 教学实现 (safe softmax)
+│   └── softmax_torch.py               # 纯 PyTorch 教学实现
 │
-└── cuda/                              # CUDA C++ 版本 (header-only)
+└── cuda/                              # CUDA C++ 版本
     ├── CMakeLists.txt                 # 构建配置
     ├── reduce.cuh                     # 公共原语: warp/block reduce + online reduce
     ├── softmax_naive.cuh              # Naive 3-pass: 每行单线程串行
@@ -23,18 +23,10 @@
         └── softmax_bench.cu           # 统一 Benchmark: 正确性 + 性能对比
 ```
 
-## 算法概览
-
-| 策略 | 算法 | Global Reads | 适用场景 |
-|------|------|-------------|---------|
-| Naive 3-pass | 串行 max → exp → normalize | 3 reads + 1 write | Baseline, 单线程/行 |
-| Warp Online | 寄存器内 max+sum 合并 | 1 read + 1 write | cols < 1024 |
-| Block SMem Online | shared memory 缓存，online reduce | 1 read + 1 write | cols ≥ 1024, smem 充足 |
-| Block Uncached Online | 2-pass global，online reduce | 2 reads + 1 write | cols ≥ 1024, smem 不足 |
-
 ### 核心思想: Online Softmax
 
-传统 softmax 需要 3 次遍历（找 max、算 sum、归一化）。Online 算法将 max-finding 和 sum-accumulation 合并为一次遍历：
+传统 softmax 需要 3 次遍历。
+Online 算法将 max-finding 和 sum-accumulation 合并为一次遍历：
 
 ```
 传统:                            Online:
@@ -52,10 +44,8 @@
 ### Triton 版本
 
 ```bash
-# Triton softmax（含正确性测试 + 性能 benchmark）
 python triton/softmax.py
 
-# PyTorch 教学实现
 python triton/softmax_torch.py
 ```
 
@@ -88,24 +78,4 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j && cmake --b
   Naive 3-pass (baseline)               1959.7417 ms  ( 65.3247 ms/iter)
   Online (CACHE_OPT=true)                  8.8778 ms  (  0.2959 ms/iter)
   Online (CACHE_OPT=false)                 8.8612 ms  (  0.2954 ms/iter)
-```
-
-## 设计要点
-
-1. **Online 算法**: 将 max-finding 和 sum-accumulation 合并为一次遍历，使用 rescaling 公式维护 running (m, s) 状态。
-
-2. **Warp Shuffle 通信**: 小 cols 时使用 `__shfl_xor_sync` 在 warp 内完成 reduce，避免 shared memory 开销。
-
-3. **向量化访存**: `Pack<T,N>` + `DirectLoad`/`DirectStore` 实现 128-bit 对齐的向量化加载/存储（LDG.128 / STG.128）。
-
-4. **CACHE_OPT 逆序遍历**: Pass 2 逆序读取数据，使 Pass 1 最后加载的数据仍在 L2 cache 中，提升 L2 命中率。
-
-5. **Occupancy-aware Grid Sizing**: `GetNumBlocks()` 根据 SM 数量和 max threads/SM 动态计算 grid 大小，确保足够的 wave 覆盖来隐藏延迟。
-
-## 文件依赖关系
-
-```
-bench/softmax_bench.cu
-  ├── softmax_naive.cuh
-  └── softmax_online.cuh ── reduce.cuh (warp/block reduce 原语)
 ```
