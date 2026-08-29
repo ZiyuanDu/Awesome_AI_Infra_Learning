@@ -1,6 +1,6 @@
-# LeetGPU 速通
+# 面试算子速通
 
-每题一个目录：`solve.cu` 提交，`bench.cu` 调 `bench()`。根目录一份 CMake，子目录不要再放 CMakeLists。
+核心代码都在`solve.cu`中，这些代码都基本在100行以内，并且保证其核心性能。
 
 ```
 include/bench.cuh      CPU / GPU 回调 + 数据，对答案；bytes>0 再计时
