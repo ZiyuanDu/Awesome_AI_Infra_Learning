@@ -63,7 +63,7 @@ __device__ __forceinline__ float4 load4(const float* p, int ld, int r, int c, in
     int i = r * ld + c;
     // r 和 c 都没有超过nr和nc边界，并且i是4的倍数，(i & 3) 表示i的最低2位是0，说明是4的倍数
     if (r < nr && c + 3 < nc && (i & 3) == 0) {
-        return reinterpret_cast<const float4*>(p + i);
+        return __ldg(reinterpret_cast<const float4*>(p + i));
     }
 
     // 否则，需要补零
