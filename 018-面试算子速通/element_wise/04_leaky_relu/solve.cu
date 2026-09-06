@@ -1,9 +1,6 @@
 #include "common.cuh"
 
-/*
- * Leaky ReLU：x>0 取 x，否则 0.01*x。逐点，带宽墙。
- * fmaxf(x, αx) 与分段等价（α=0.01<1），无分支。
- */
+
 constexpr float ALPHA = 0.01f;
 
 __device__ __forceinline__ float leaky(float x) { return fmaxf(x, ALPHA * x); }

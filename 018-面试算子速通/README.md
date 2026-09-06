@@ -7,7 +7,7 @@
 include/          common.cuh（reduce/scan/online/load4）+ bench.cuh
 element_wise/     01–10 逐点 map
 permute/          reverse · transpose · interleave
-gemm/             matmul
+gemm/             matmul · spmv · gemm(fp16 αβ)
 stencil/          conv1d/2d/3d
 reduce/           reduction · softmax · prefix_sum · dot
 attention/        naive · online · flash_v2
@@ -18,7 +18,7 @@ attention/        naive · online · flash_v2
 |---|---|
 | `element_wise` | grid-stride，可 `float4` |
 | `permute` | 下标置换；转置要 smem |
-| `gemm` | tile + smem 外积 |
+| `gemm` | tile + smem 外积；SpMV=按行 GEMV |
 | `stencil` | 输出 tile + 输入 halo |
 | `reduce` | shuffle / atomic / online `(m,ℓ)` / scan |
 | `attention` | SDPA → online → FA2 |

@@ -1,9 +1,9 @@
 #include "common.cuh"
 
-
 __device__ __forceinline__ float4 relu4(float4 v) {
     return make_float4(fmaxf(v.x, 0.f), fmaxf(v.y, 0.f), fmaxf(v.z, 0.f), fmaxf(v.w, 0.f));
 }
+
 
 __global__ void relu_kernel(const float* __restrict__ in, float* __restrict__ out, int N) {
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;

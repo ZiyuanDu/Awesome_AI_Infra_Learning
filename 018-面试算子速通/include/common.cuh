@@ -4,7 +4,6 @@
 
 #define CEIL(a, b) (((a) + (b) - 1) / (b))
 
-/* ---- 二元算子 ---- */
 
 struct sum_op {
     __device__ __forceinline__ float operator()(float a, float b) const { return a + b; }
@@ -15,8 +14,6 @@ struct max_op {
     __device__ __forceinline__ float operator()(float a, float b) const { return fmaxf(a, b); }
     __device__ __forceinline__ static float init() { return -INFINITY; }
 };
-
-/* ---- warp reduce / scan ---- */
 
 template <typename Op>
 __device__ __forceinline__ float warpReduce(float v) {
@@ -33,7 +30,6 @@ __device__ __forceinline__ float warpReduceMax(float v) {
     return warpReduce<max_op>(v);
 }
 
-/* Inclusive scan：lane i ← 本 warp 内 0..i 之和（Hillis–Steele + shfl_up） */
 __device__ __forceinline__ float warpScanInclusive(float v) {
     const int lane = threadIdx.x & 31;
 #pragma unroll
@@ -44,8 +40,6 @@ __device__ __forceinline__ float warpScanInclusive(float v) {
     }
     return v;
 }
-
-/* ---- block reduce / scan ---- */
 
 template <int BLOCK, typename Op>
 __device__ __forceinline__ float blockReduce(float v) {
@@ -77,7 +71,6 @@ template <int BLOCK>
 __device__ __forceinline__ float blockReduceMax(float v) {
     return blockReduce<BLOCK, max_op>(v);
 }
-
 template <int BLOCK>
 __device__ __forceinline__ float blockScanInclusive(float v) {
     __shared__ float wsum[BLOCK / 32];
@@ -101,13 +94,10 @@ __device__ __forceinline__ float blockScanInclusive(float v) {
         v += wsum[wid - 1];
     return v;
 }
-
 template <int BLOCK>
 __device__ __forceinline__ float blockScanExclusive(float v) {
     return blockScanInclusive<BLOCK>(v) - v;
 }
-
-/* ---- online softmax (m, ℓ)；FA 跨 tile 同款 ---- */
 
 __device__ __forceinline__ void onlineMerge(float& m, float& l, float m2, float l2) {
     float nm = fmaxf(m, m2);
@@ -154,8 +144,6 @@ __device__ __forceinline__ void blockOnlineReduce(float& m, float& l) {
     m = bm;
     l = bl;
 }
-
-/* ---- float4 有界读写（重载：2D GEMM / 1D reduce·scan）---- */
 
 __device__ __forceinline__ float4 load4(const float* p, int ld, int r, int c, int nr, int nc) {
     const int i = r * ld + c;
