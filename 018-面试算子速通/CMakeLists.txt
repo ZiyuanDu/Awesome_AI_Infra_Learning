@@ -15,21 +15,40 @@ endif()
 find_package(CUDAToolkit REQUIRED)
 
 function(leetgpu_bench dir)
-    add_executable(${dir} ${dir}/solve.cu ${dir}/bench.cu)
-    target_include_directories(${dir} PRIVATE
-        ${PROJECT_SOURCE_DIR}
+    string(REPLACE "/" "_" tgt "${dir}")
+    add_executable(${tgt} ${dir}/solve.cu ${dir}/bench.cu)
+    target_include_directories(${tgt} PRIVATE
         ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/${dir}
     )
-    target_link_libraries(${dir} PRIVATE CUDA::cudart)
-    set_target_properties(${dir} PROPERTIES
+    target_link_libraries(${tgt} PRIVATE CUDA::cudart)
+    set_target_properties(${tgt} PROPERTIES
         OUTPUT_NAME bench
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
         CUDA_SEPARABLE_COMPILATION OFF
     )
 endfunction()
 
-leetgpu_bench(01_vector_add)
-leetgpu_bench(02_matrix_transpose)
-leetgpu_bench(03_matrix_mul)
-leetgpu_bench(04_reverse_array)
+leetgpu_bench(element_wise/01_vector_add)
+leetgpu_bench(element_wise/02_color_inversion)
+leetgpu_bench(element_wise/03_relu)
+leetgpu_bench(element_wise/04_leaky_relu)
+leetgpu_bench(element_wise/05_matrix_copy)
+leetgpu_bench(element_wise/06_silu)
+leetgpu_bench(element_wise/07_swiglu)
+leetgpu_bench(element_wise/08_value_clipping)
+leetgpu_bench(element_wise/09_rgb_to_grayscale)
+leetgpu_bench(element_wise/10_sigmoid)
+leetgpu_bench(permute/01_reverse_array)
+leetgpu_bench(permute/02_matrix_transpose)
+leetgpu_bench(permute/03_interleave_arrays)
+leetgpu_bench(gemm/01_matrix_mul)
+leetgpu_bench(stencil/01_conv1d)
+leetgpu_bench(stencil/02_conv2d)
+leetgpu_bench(stencil/03_conv3d)
+leetgpu_bench(reduce/01_reduction)
+leetgpu_bench(reduce/02_softmax)
+leetgpu_bench(reduce/03_prefix_sum)
+leetgpu_bench(reduce/04_dot_product)
+leetgpu_bench(attention/01_naive)
+leetgpu_bench(attention/02_online)
+leetgpu_bench(attention/03_flash_v2)

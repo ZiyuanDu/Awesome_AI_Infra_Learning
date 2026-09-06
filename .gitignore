@@ -2,30 +2,47 @@
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+.venv/
+venv/
 
-# CUDA / CMake build artifacts
+# CUDA / CMake build
 build/
+**/build/
+compile_commands.json
 *.o
+*.a
+*.so
 *.out
+*.exe
 *.ptx
 *.cubin
 *.fatbin
+*.ncu-rep
+*.nsys-rep
+*.nsys-cuprof*
 
-# Data files
+# Data / bench dumps
 data/
 *.tar.gz
 *.tgz
-
-# Benchmark outputs
 *.csv
 *.png
 *.html
 results/
+profile/
 
-# IDE
+# Local-only
+*.deb
+草稿.md
+**/compare.cu
+
+# IDE / OS
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
+
+# Legacy binaries
+**/verify
+018-LeetGPU速通/vecadd
