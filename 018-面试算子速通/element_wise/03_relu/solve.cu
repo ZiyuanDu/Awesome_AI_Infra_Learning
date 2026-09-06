@@ -5,7 +5,11 @@ __device__ __forceinline__ float4 relu4(float4 v) {
 }
 
 
-__global__ void relu_kernel(const float* __restrict__ in, float* __restrict__ out, int N) {
+__global__ void relu_kernel(
+    const float* __restrict__ in, 
+    float* __restrict__ out, 
+    int N
+) {
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     const int stride = gridDim.x * blockDim.x;
     const int n4 = N / 4;

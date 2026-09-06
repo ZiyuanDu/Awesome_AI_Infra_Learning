@@ -10,13 +10,14 @@ static void clipCpu(const float* in, float* out, int N, float lo, float hi) {
         out[i] = std::min(std::max(in[i], lo), hi);
 }
 
-static void test(int N, float lo, float hi, const char* name, double bytes = 0) {
+static void test(int N, float lo, float hi, const char* name, double bytes = 0, bool check = true) {
     std::vector<float> in(N);
     for (int i = 0; i < N; ++i)
         in[i] = (float)((i % 17) - 8);
     bench(name, {&in}, N,
           [=](const float* const* a, float* out) { clipCpu(a[0], out, N, lo, hi); },
-          [=](const float* const* a, float* out) { solve(a[0], out, N, lo, hi); }, bytes);
+          [=](const float* const* a, float* out) { solve(a[0], out, N, lo, hi); }, bytes, 0,
+          check);
 }
 
 int main() {
@@ -38,6 +39,10 @@ int main() {
     test(3, -0.5f, 2.5f, "tail");
     test(10007, -2.f, 3.f, "odd");
 
-    const int N = 100000;
-    test(N, -1.f, 1.f, "leetgpu", 2.0 * N * sizeof(float));
+    // LeetGPU timing size — too small for meaningful BW
+    test(100000, -1.f, 1.f, "leetgpu");
+
+    // Local BW: saturate HBM; median via bench.cuh
+    const int Nbw = 50000000;
+    test(Nbw, -1.f, 1.f, "bw", 2.0 * Nbw * sizeof(float), /*check=*/false);
 }

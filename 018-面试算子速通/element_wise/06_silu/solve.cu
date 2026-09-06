@@ -7,17 +7,20 @@ __device__ __forceinline__ float4 silu4(float4 v) {
 }
 
 __global__ void silu_kernel(const float* __restrict__ in, float* __restrict__ out, int N) {
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const int stride = gridDim.x * blockDim.x;
-    const int n4 = N / 4;
+    const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t stride = gridDim.x * blockDim.x;
+    const size_t n4 = N / 4;
 
     const float4* in4 = reinterpret_cast<const float4*>(in);
     float4* out4 = reinterpret_cast<float4*>(out);
-    for (int i = tid; i < n4; i += stride)
-        out4[i] = silu4(in4[i]);
 
-    for (int i = n4 * 4 + tid; i < N; i += stride)
+    for (size_t i = tid; i < n4; i += stride) {
+        out4[i] = silu4(in4[i]);
+    }
+
+    for (size_t i = n4 * 4 + tid; i < N; i += stride) {
         out[i] = silu(in[i]);
+    }
 }
 
 void solve(const float* input, float* output, int N) {

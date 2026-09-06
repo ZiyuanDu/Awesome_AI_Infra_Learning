@@ -12,13 +12,14 @@ static void siluCpu(const float* in, float* out, int N) {
     }
 }
 
-static void test(int N, const char* name, double bytes = 0) {
+static void test(int N, const char* name, double bytes = 0, bool check = true) {
     std::vector<float> in(N);
     for (int i = 0; i < N; ++i)
         in[i] = (float)((i % 13) - 6);
     bench(name, {&in}, N,
           [=](const float* const* a, float* out) { siluCpu(a[0], out, N); },
-          [=](const float* const* a, float* out) { solve(a[0], out, N); }, bytes);
+          [=](const float* const* a, float* out) { solve(a[0], out, N); }, bytes, 0,
+          check);
 }
 
 int main() {
@@ -31,6 +32,8 @@ int main() {
     test(3, "tail");
     test(10007, "odd");
 
-    const int N = 50000;
-    test(N, "leetgpu", 2.0 * N * sizeof(float));
+    test(50000, "leetgpu");
+
+    const int Nbw = 50000000;
+    test(Nbw, "bw", 2.0 * Nbw * sizeof(float), /*check=*/false);
 }
