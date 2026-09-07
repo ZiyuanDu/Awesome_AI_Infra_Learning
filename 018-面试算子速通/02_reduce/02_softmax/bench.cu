@@ -22,17 +22,25 @@ static bool close(float got, float ref) {
     return fabsf(got - ref) / den <= 2e-3f || fabsf(got - ref) <= 2e-4f;
 }
 
+static void fillPattern(std::vector<float>& in) {
+    for (size_t i = 0; i < in.size(); ++i)
+        in[i] = (float)((i % 17) - 8) * 0.5f;
+}
+
+// online: read x twice + write y ≈ 3N floats
+static constexpr double kBytesPerElem = 3.0 * sizeof(float);
+
 static void check(const std::vector<float>& in, const char* name) {
     const int N = (int)in.size();
     std::vector<float> ref(N), got(N);
     softmaxCpu(in.data(), ref.data(), N);
 
     float *dIn = nullptr, *dOut = nullptr;
-    cudaMalloc(&dIn, N * sizeof(float));
-    cudaMalloc(&dOut, N * sizeof(float));
-    cudaMemcpy(dIn, in.data(), N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc(&dIn, (size_t)N * sizeof(float));
+    cudaMalloc(&dOut, (size_t)N * sizeof(float));
+    cudaMemcpy(dIn, in.data(), (size_t)N * sizeof(float), cudaMemcpyHostToDevice);
     solve(dIn, dOut, N);
-    cudaMemcpy(got.data(), dOut, N * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(got.data(), dOut, (size_t)N * sizeof(float), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < N; ++i) {
         if (!close(got[i], ref[i])) {
@@ -45,32 +53,40 @@ static void check(const std::vector<float>& in, const char* name) {
     cudaFree(dOut);
 }
 
-static void test(int N, const char* name, double bytes = 0) {
-    std::vector<float> in(N);
-    for (int i = 0; i < N; ++i)
-        in[i] = (float)((i % 17) - 8) * 0.5f;
-    check(in, name);
+static void benchSoftmax(int N, const char* name, bool doCheck) {
+    float *dIn = nullptr, *dOut = nullptr;
+    cudaMalloc(&dIn, (size_t)N * sizeof(float));
+    cudaMalloc(&dOut, (size_t)N * sizeof(float));
 
-    if (bytes > 0) {
-        float *dIn = nullptr, *dOut = nullptr;
-        cudaMalloc(&dIn, N * sizeof(float));
-        cudaMalloc(&dOut, N * sizeof(float));
-        cudaMemcpy(dIn, in.data(), N * sizeof(float), cudaMemcpyHostToDevice);
-        float ms = timeMs([&] { solve(dIn, dOut, N); }, 10, 30);
-        printf("    %.3f ms  %.0f GB/s\n", ms, bytes / (ms * 1e6));
-        cudaFree(dIn);
-        cudaFree(dOut);
+    if (doCheck) {
+        std::vector<float> in(N);
+        fillPattern(in);
+        check(in, name);
+        cudaMemcpy(dIn, in.data(), (size_t)N * sizeof(float), cudaMemcpyHostToDevice);
+    } else {
+        cudaMemset(dIn, 1, (size_t)N * sizeof(float));
+        printf("RUN %s\n", name);
     }
+
+    const double bytes = (double)N * kBytesPerElem;
+    float ms = timeMsMedian([&] { solve(dIn, dOut, N); });
+    printf("    N=%d  %.4f ms (median)  %.0f GB/s\n", N, ms, bytes / (ms * 1e6));
+
+    cudaFree(dIn);
+    cudaFree(dOut);
 }
 
 int main() {
     check({1.f, 2.f, 3.f}, "ex1");
     check({-10.f, -5.f, 0.f, 5.f, 10.f}, "ex2");
-    test(1, "n1");
-    test(3, "tail");
-    test(10007, "odd");
+    benchSoftmax(1, "n1", true);
+    benchSoftmax(3, "tail", true);
+    benchSoftmax(10007, "odd", true);
 
-    // online：读 x 两遍 + 写 y 一遍 ≈ 3N floats
-    const int N = 500000;
-    test(N, "leetgpu", 3.0 * N * sizeof(float));
+    // LeetGPU timing size — fits in L2; launch/reduce show up in the time
+    benchSoftmax(500000, "leetgpu", true);
+
+    // Local BW: larger than L2 so the 2-read + 1-write bound is visible
+    benchSoftmax(1 << 24, "bw16M", false);   // 64MB x, 192MB traffic
+    benchSoftmax(50000000, "bw50M", false);  // 200MB x, 600MB traffic
 }

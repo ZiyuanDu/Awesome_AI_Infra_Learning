@@ -1,10 +1,8 @@
 #include "common.cuh"
 
-
 constexpr int BLOCK = 256;
 
-__global__ void softmax_partial(const float* __restrict__ x, float* __restrict__ block_m,
-                                float* __restrict__ block_l, int N) {
+__global__ void softmax_stats(const float* __restrict__ x, float2* __restrict__ blk, int N) {
     float m = -INFINITY, l = 0.f;
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     const int stride = gridDim.x * blockDim.x;
@@ -22,32 +20,35 @@ __global__ void softmax_partial(const float* __restrict__ x, float* __restrict__
         onlineUpdate(m, l, x[i]);
 
     blockOnlineReduce<BLOCK>(m, l);
-    if (threadIdx.x == 0) {
-        block_m[blockIdx.x] = m;
-        block_l[blockIdx.x] = l;
-    }
+    if (threadIdx.x == 0)
+        blk[blockIdx.x] = make_float2(m, l);
 }
 
-__global__ void softmax_merge(const float* __restrict__ block_m, const float* __restrict__ block_l,
-                              float* __restrict__ ml, int nBlocks) {
+__global__ void softmax_merge(const float2* __restrict__ blk, float2* __restrict__ ml, int nBlocks) {
     float m = -INFINITY, l = 0.f;
     for (int i = threadIdx.x; i < nBlocks; i += blockDim.x)
-        onlineMerge(m, l, block_m[i], block_l[i]);
+        onlineMerge(m, l, blk[i].x, blk[i].y);
     blockOnlineReduce<BLOCK>(m, l);
-    if (threadIdx.x == 0) {
-        ml[0] = m;
-        ml[1] = l;
-    }
+    if (threadIdx.x == 0)
+        ml[0] = make_float2(m, l);
 }
 
-__global__ void softmax_write(const float* __restrict__ x, float* __restrict__ y,
-                              const float* __restrict__ ml, int N) {
-    const float m = ml[0];
-    const float inv = 1.f / ml[1];
+__global__ void softmax_norm(const float* __restrict__ x, float* __restrict__ y,
+                             const float2* __restrict__ ml, int N) {
+    const float m = ml[0].x;
+    const float inv = 1.f / ml[0].y;
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     const int stride = gridDim.x * blockDim.x;
-    // 逆序：第二遍读 x 时更容易命中 K1 留下的 L2（CACHE_OPT）
-    for (int i = N - 1 - tid; i >= 0; i -= stride)
+    const int n4 = N / 4;
+    const float4* x4 = reinterpret_cast<const float4*>(x);
+    float4* y4 = reinterpret_cast<float4*>(y);
+
+    for (int i = n4 - 1 - tid; i >= 0; i -= stride) {
+        float4 a = x4[i];
+        y4[i] = make_float4(__expf(a.x - m) * inv, __expf(a.y - m) * inv, __expf(a.z - m) * inv,
+                            __expf(a.w - m) * inv);
+    }
+    for (int i = n4 * 4 + tid; i < N; i += stride)
         y[i] = __expf(x[i] - m) * inv;
 }
 
@@ -61,23 +62,19 @@ void solve(const float* input, float* output, int N) {
     if (blocks < 1)
         blocks = 1;
 
-    // 临时 (m,ℓ)；容量按需扩，避免每次计时都 malloc
-    static float* d_bm = nullptr;
-    static float* d_bl = nullptr;
-    static float* d_ml = nullptr;
+    static float2* d_blk = nullptr;
+    static float2* d_ml = nullptr;
     static int cap = 0;
     if (blocks > cap) {
-        cudaFree(d_bm);
-        cudaFree(d_bl);
+        cudaFree(d_blk);
         if (!d_ml)
-            cudaMalloc(&d_ml, 2 * sizeof(float));
-        cudaMalloc(&d_bm, blocks * sizeof(float));
-        cudaMalloc(&d_bl, blocks * sizeof(float));
+            cudaMalloc(&d_ml, sizeof(float2));
+        cudaMalloc(&d_blk, (size_t)blocks * sizeof(float2));
         cap = blocks;
     }
 
-    softmax_partial<<<blocks, BLOCK>>>(input, d_bm, d_bl, N);
-    softmax_merge<<<1, BLOCK>>>(d_bm, d_bl, d_ml, blocks);
-    softmax_write<<<blocks, BLOCK>>>(input, output, d_ml, N);
+    softmax_stats<<<blocks, BLOCK>>>(input, d_blk, N);
+    softmax_merge<<<1, BLOCK>>>(d_blk, d_ml, blocks);
+    softmax_norm<<<blocks, BLOCK>>>(input, output, d_ml, N);
     cudaDeviceSynchronize();
 }

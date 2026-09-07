@@ -19,17 +19,22 @@ static bool close(float got, float ref) {
     return fabsf(got - ref) / den <= 2e-4f || fabsf(got - ref) <= 1e-3f;
 }
 
+static void fillPattern(std::vector<float>& in) {
+    for (size_t i = 0; i < in.size(); ++i)
+        in[i] = (float)((i % 13) - 6);
+}
+
 static void check(const std::vector<float>& in, const char* name) {
     const int N = (int)in.size();
     std::vector<float> ref(N), got(N);
     scanCpu(in.data(), ref.data(), N);
 
     float *dIn = nullptr, *dOut = nullptr;
-    cudaMalloc(&dIn, N * sizeof(float));
-    cudaMalloc(&dOut, N * sizeof(float));
-    cudaMemcpy(dIn, in.data(), N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc(&dIn, (size_t)N * sizeof(float));
+    cudaMalloc(&dOut, (size_t)N * sizeof(float));
+    cudaMemcpy(dIn, in.data(), (size_t)N * sizeof(float), cudaMemcpyHostToDevice);
     solve(dIn, dOut, N);
-    cudaMemcpy(got.data(), dOut, N * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(got.data(), dOut, (size_t)N * sizeof(float), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < N; ++i) {
         if (!close(got[i], ref[i])) {
@@ -42,41 +47,47 @@ static void check(const std::vector<float>& in, const char* name) {
     cudaFree(dOut);
 }
 
-static void test(int N, const char* name, double bytes = 0) {
+static void checkN(int N, const char* name) {
     std::vector<float> in(N);
-    for (int i = 0; i < N; ++i)
-        in[i] = (float)((i % 13) - 6);
+    fillPattern(in);
     check(in, name);
+}
 
-    if (bytes > 0) {
-        float *dIn = nullptr, *dOut = nullptr;
-        cudaMalloc(&dIn, N * sizeof(float));
-        cudaMalloc(&dOut, N * sizeof(float));
-        cudaMemcpy(dIn, in.data(), N * sizeof(float), cudaMemcpyHostToDevice);
-        float ms = timeMs([&] { solve(dIn, dOut, N); }, 10, 30);
-        printf("    %.3f ms  %.0f GB/s\n", ms, bytes / (ms * 1e6));
-        cudaFree(dIn);
-        cudaFree(dOut);
-    }
+// Traffic ≈ tile_sum read N + tile_scan read N + write N
+static void benchBw(int N, const char* name) {
+    float *dIn = nullptr, *dOut = nullptr;
+    cudaMalloc(&dIn, (size_t)N * sizeof(float));
+    cudaMalloc(&dOut, (size_t)N * sizeof(float));
+    cudaMemset(dIn, 1, (size_t)N * sizeof(float));
+
+    const double bytes = 3.0 * (double)N * sizeof(float);
+    float ms = timeMsMedian([&] { solve(dIn, dOut, N); });
+    printf("RUN %s\n", name);
+    printf("    %.3f ms (median)  %.0f GB/s  (≈3N: sum+scan R/W)\n", ms, bytes / (ms * 1e6));
+
+    cudaFree(dIn);
+    cudaFree(dOut);
 }
 
 int main() {
     check({1.f, 2.f, 3.f, 4.f}, "ex1");
     check({5.f, -2.f, 3.f, 1.f, -4.f}, "ex2");
-    test(1, "n1");
-    test(31, "warp");
-    test(512, "tile");
-    test(513, "tile+1");
-    test(10007, "odd");
-    test(200000, "two-level");  // > 512*512? 200k/512 < 512, still one level on totals
 
-    const int N = 250000;
-    test(N, "leetgpu", 2.0 * N * sizeof(float));
+    checkN(1, "n1");
+    checkN(31, "warp");
+    checkN(512, "block");
+    checkN(2048, "one-tile");
+    checkN(2049, "two-tile");
+    checkN(10007, "odd");
+    checkN(200000, "multi-tile");
 
-    // 约束上限量级（只对答案，不强制计时）
-    test(512 * 512 + 3, "l2");
+    // LeetGPU timing size — correctness only (too small for HBM GB/s)
+    checkN(250000, "leetgpu");
 
-    // 大 N：看真实带宽（LeetGPU 计时点太小，被 launch 淹没）
-    test(1 << 24, "16M", 2.0 * (1 << 24) * sizeof(float));
-    test(100000000, "1e8", 2.0 * 100000000 * sizeof(float));
+    // Boundary: two-level totals path
+    checkN(512 * 512 + 3, "l2-totals");
+
+    // Local BW (>> L2)
+    benchBw(1 << 24, "bw_16M");
+    benchBw(100000000, "bw_1e8");
 }
