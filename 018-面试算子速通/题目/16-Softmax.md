@@ -1,7 +1,7 @@
 # Softmax（Reduce / Online）
 
 **LeetGPU：** Medium · [Softmax](https://leetgpu.com/challenges/softmax)  
-**目录：** `reduce/02_softmax`  
+**目录：** `02_reduce/02_softmax`
 **论文：** Milakov & Gimelshein, *Online normalizer calculation for softmax*, 2018
 
 一维向量（不是按行矩阵）：
@@ -46,15 +46,15 @@ m' = max(m1, m2)
 ℓ' = ℓ1·exp(m1-m') + ℓ2·exp(m2-m')
 ```
 
-`common.cuh`：`onlineUpdate` / `onlineMerge` / `blockOnlineReduce`。
+`common.cuh`：`onlineUpdate` / `onlineMerge` / `blockOnlineReduce`（块内先 max 再 rescale 再 sum）。
 
 ## 本题写法（N 大、smem 装不下整向量）
 
-1. **K1** 每 block grid-stride + `float4`，online 出 `(m_b, ℓ_b)`
-2. **K2** 一个 block 把所有 block 状态 `onlineMerge` 成全局 `(m, ℓ)`
-3. **K3** 再读 `x` 写 `y`；**逆序**扫，蹭 K1 留在 L2 里的线（CACHE_OPT）
+1. **K1 `stats`** 每 block grid-stride + `float4`，online 出 `(m_b, ℓ_b)`，打成 `float2`
+2. **K2 `merge`** 一个 block 把所有块状态合成全局 `(m, ℓ)`
+3. **K3 `norm`** `float4` **逆序**再读 `x` 写 `y`，蹭 K1 留在 L2 里的尾部（CACHE_OPT）
 
-价值：少一次全局读；代数上给 FlashAttention 铺路。纯速度仍是带宽墙。
+价值：少一次全局读；代数上给 FlashAttention 铺路。纯速度仍是带宽墙。`merge` 单独成核，是为了让 `norm` 保持瘦、占不满寄存器。
 
 ## 和 019 / 012 的关系
 

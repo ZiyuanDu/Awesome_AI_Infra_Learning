@@ -1,7 +1,7 @@
 # RGB to Grayscale（Element-wise）
 
 **LeetGPU：** Easy · [RGB to Grayscale](https://leetgpu.com/challenges/rgb-to-grayscale)  
-**目录：** `element_wise/09_rgb_to_grayscale`
+**目录：** `01_element_wise/09_rgb_to_grayscale`
 
 输入是 `height × width × 3` 的 float，按像素交错 `R,G,B,R,G,B,…`。输出 `height × width` 灰度：
 

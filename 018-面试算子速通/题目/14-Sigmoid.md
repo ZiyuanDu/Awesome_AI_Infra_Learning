@@ -1,7 +1,7 @@
 # Sigmoid Activation（Element-wise）
 
 **LeetGPU：** Easy · [Sigmoid Activation](https://leetgpu.com/challenges/sigmoid-activation)  
-**目录：** `element_wise/10_sigmoid`
+**目录：** `01_element_wise/10_sigmoid`
 
 $$
 \sigma(x)=\frac{1}{1+e^{-x}}

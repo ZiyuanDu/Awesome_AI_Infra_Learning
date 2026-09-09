@@ -1,7 +1,10 @@
 #include "common.cuh"
 
+// Leaky ReLU：out[i] = x > 0 ? x : alpha * x。
 
 constexpr float ALPHA = 0.01f;
+constexpr int THREADS = 256;
+constexpr int MAX_BLOCKS = 1024;
 
 __device__ __forceinline__ float leaky(float x) { return fmaxf(x, ALPHA * x); }
 __device__ __forceinline__ float4 leaky4(float4 v) { return make_float4(leaky(v.x), leaky(v.y), leaky(v.z), leaky(v.w)); }
@@ -25,12 +28,11 @@ __global__ void leaky_relu_kernel(
 }
 
 void solve(const float* input, float* output, int N) {
-    const int threads = 256;
-    int blocks = CEIL(N / 4, threads);
+    int blocks = CEIL(N / 4, THREADS);
     if (blocks < 1)
         blocks = 1;
-    if (blocks > 1024)
-        blocks = 1024;
-    leaky_relu_kernel<<<blocks, threads>>>(input, output, N);
+    if (blocks > MAX_BLOCKS)
+        blocks = MAX_BLOCKS;
+    leaky_relu_kernel<<<blocks, THREADS>>>(input, output, N);
     cudaDeviceSynchronize();
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -6,7 +7,6 @@
 #include <vector>
 
 #include <cuda_runtime.h>
-
 
 template <class F>
 float timeMs(F f, int warmup = 3, int runs = 10) {
@@ -26,6 +26,31 @@ float timeMs(F f, int warmup = 3, int runs = 10) {
     cudaEventDestroy(a);
     cudaEventDestroy(b);
     return ms / runs;
+}
+
+// One timed call per sample; return median (odd trials). Better for BW than batched mean.
+template <class F>
+float timeMsMedian(F f, int warmup = 5, int trials = 21) {
+    for (int i = 0; i < warmup; ++i)
+        f();
+    cudaDeviceSynchronize();
+
+    std::vector<float> samples((size_t)trials);
+    cudaEvent_t a, b;
+    cudaEventCreate(&a);
+    cudaEventCreate(&b);
+    for (int t = 0; t < trials; ++t) {
+        cudaEventRecord(a);
+        f();
+        cudaEventRecord(b);
+        cudaEventSynchronize(b);
+        cudaEventElapsedTime(&samples[(size_t)t], a, b);
+    }
+    cudaEventDestroy(a);
+    cudaEventDestroy(b);
+
+    std::nth_element(samples.begin(), samples.begin() + trials / 2, samples.end());
+    return samples[(size_t)(trials / 2)];
 }
 
 template <class Cpu, class Gpu>
@@ -63,8 +88,8 @@ void bench(const char* name, std::initializer_list<const std::vector<float>*> in
     }
 
     if (bytes > 0 || flops > 0) {
-        float ms = timeMs([&] { gpu(dIn.data(), dOut); });
-        printf("    %.3f ms", ms);
+        float ms = timeMsMedian([&] { gpu(dIn.data(), dOut); });
+        printf("    %.3f ms (median)", ms);
         if (flops > 0)
             printf("  %.2f TFLOPS", flops / (ms * 1e9));
         if (bytes > 0)

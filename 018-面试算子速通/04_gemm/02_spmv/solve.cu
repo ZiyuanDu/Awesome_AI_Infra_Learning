@@ -1,5 +1,8 @@
 #include "common.cuh"
 
+// SpMV：y = A * x。
+// 输入是 M×N row-major 稠密存储，`nnz` 由测试传入但当前实现不跳零。
+// 策略：x 能放进 smem 时复用 x；否则按行用 float4 或标量路径。
 
 constexpr int BLOCK = 256;
 
@@ -16,16 +19,16 @@ __global__ void gemv_f4_smem(const float* __restrict__ A, const float* __restric
 
     for (int row = blockIdx.x; row < M; row += gridDim.x) {
         const float4* a4 = reinterpret_cast<const float4*>(A + (size_t)row * N);
-        float v = 0.f;
+        float partial = 0.f;
 #pragma unroll 4
         for (int j = tid; j < n4; j += BLOCK) {
             float4 a = __ldg(a4 + j);
             float4 b = sx4[j];
-            v += a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+            partial += a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
         }
-        v = blockReduceSum<BLOCK>(v);
+        partial = blockReduceSum<BLOCK>(partial);
         if (tid == 0)
-            y[row] = v;
+            y[row] = partial;
         __syncthreads();
     }
 }
@@ -40,12 +43,12 @@ __global__ void gemv_scalar_smem(const float* __restrict__ A, const float* __res
 
     for (int row = blockIdx.x; row < M; row += gridDim.x) {
         const float* rowA = A + (size_t)row * N;
-        float v = 0.f;
+        float partial = 0.f;
         for (int j = tid; j < N; j += BLOCK)
-            v += __ldg(rowA + j) * sx[j];
-        v = blockReduceSum<BLOCK>(v);
+            partial += __ldg(rowA + j) * sx[j];
+        partial = blockReduceSum<BLOCK>(partial);
         if (tid == 0)
-            y[row] = v;
+            y[row] = partial;
         __syncthreads();
     }
 }
@@ -56,27 +59,27 @@ __global__ void gemv_f4_row(const float* __restrict__ A, const float* __restrict
     const float4* x4 = reinterpret_cast<const float4*>(x);
     const int n4 = N >> 2;
     const int tid = threadIdx.x;
-    float v = 0.f;
+    float partial = 0.f;
     for (int j = tid; j < n4; j += BLOCK) {
         float4 a = __ldg(a4 + j);
         float4 b = __ldg(x4 + j);
-        v += a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+        partial += a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
     }
-    v = blockReduceSum<BLOCK>(v);
+    partial = blockReduceSum<BLOCK>(partial);
     if (tid == 0)
-        y[blockIdx.x] = v;
+        y[blockIdx.x] = partial;
 }
 
 __global__ void gemv_scalar_row(const float* __restrict__ A, const float* __restrict__ x,
                                 float* __restrict__ y, int N) {
     const float* row = A + (size_t)blockIdx.x * N;
     const int tid = threadIdx.x;
-    float v = 0.f;
+    float partial = 0.f;
     for (int j = tid; j < N; j += BLOCK)
-        v += __ldg(row + j) * __ldg(x + j);
-    v = blockReduceSum<BLOCK>(v);
+        partial += __ldg(row + j) * __ldg(x + j);
+    partial = blockReduceSum<BLOCK>(partial);
     if (tid == 0)
-        y[blockIdx.x] = v;
+        y[blockIdx.x] = partial;
 }
 
 void solve(const float* A, const float* x, float* y, int M, int N, int /*nnz*/) {
@@ -92,8 +95,8 @@ void solve(const float* A, const float* x, float* y, int M, int N, int /*nnz*/) 
     const size_t shmem = (size_t)N * sizeof(float);
     const bool fit = (int)shmem <= maxShmem && N > 0;
 
+    // smem 放得下 x：让每个 block 扫多行，摊销 x 的加载成本。
     if (fit) {
-        // 每 SM 按 smem 估占用，让每个 block 多扫几行摊销装 x
         int perSm = maxShmem / (int)shmem;
         if (perSm < 1)
             perSm = 1;

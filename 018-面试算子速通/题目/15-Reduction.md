@@ -1,7 +1,7 @@
 # Reduction（Reduce）
 
 **LeetGPU：** Medium · [Reduction](https://leetgpu.com/challenges/reduction)  
-**目录：** `reduce/01_reduction`
+**目录：** `02_reduce/01_reduction`
 
 $$
 \mathrm{out}=\sum_{i=0}^{N-1}x[i]

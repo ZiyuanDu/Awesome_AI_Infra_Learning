@@ -1,6 +1,8 @@
 #include "common.cuh"
 
 /*
+ * Conv2D valid 卷积。
+ *
  * 2D valid：out[i,j] = Σ_{m,n} in[i+m,j+n] * ker[m,n]
  *
  * 同 1D：输出 tile + 输入 halo → smem；核 → constant；行距 +1 减 bank 冲突。
@@ -24,6 +26,7 @@ __global__ void conv2d_kernel(const float* __restrict__ in, float* __restrict__ 
     const int tx = threadIdx.x;
     const int tid = ty * TX + tx;
 
+    // 协作加载二维输入 tile，越界补 0。
     for (int t = tid; t < tileR * tileC; t += TY * TX) {
         const int lr = t / tileC;
         const int lc = t - lr * tileC;
@@ -43,6 +46,7 @@ __global__ void conv2d_kernel(const float* __restrict__ in, float* __restrict__ 
         const float* row = sIn + (ty + m) * ld + tx;
         const float* krow = c_ker + m * kC;
         int n = 0;
+        // 内维手动展开 4 项。
         for (; n + 3 < kC; n += 4) {
             acc += row[n] * krow[n] + row[n + 1] * krow[n + 1] + row[n + 2] * krow[n + 2] +
                    row[n + 3] * krow[n + 3];

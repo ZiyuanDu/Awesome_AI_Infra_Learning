@@ -1,7 +1,7 @@
 # Dot Product（Reduce）
 
 **LeetGPU：** Medium · [Dot Product](https://leetgpu.com/challenges/dot-product)  
-**目录：** `reduce/04_dot_product`
+**目录：** `02_reduce/04_dot_product`
 
 $$
 \mathrm{out}=\sum_{i=0}^{N-1} A[i]\cdot B[i]
@@ -9,7 +9,7 @@ $$
 
 ## 放哪
 
-**`reduce/`，紧挨 `01_reduction`。** 不是 element-wise，也不是 GEMM。
+**`02_reduce/`，紧挨 `01_reduction`。** 不是 element-wise，也不是 GEMM。
 
 | 类别 | 适不适合 | 原因 |
 |---|---|---|

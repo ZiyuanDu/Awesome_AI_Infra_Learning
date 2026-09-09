@@ -1,5 +1,7 @@
 #include "common.cuh"
 
+// FlashAttention v2 风格的分块 online softmax attention。
+// 一个 block 处理一个 query tile，KV 按 TILE 分块流式更新 (m, l, Oacc)。
 
 constexpr int TILE = 32;
 
@@ -8,9 +10,11 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
                                 int d) {
     const int tx = threadIdx.x;
     const int q = blockIdx.x * TILE + tx;
+    // smem 行距 +1，降低 bank conflict。
     const int ld = d + 1;
     const int sld = TILE + 1;
 
+    // 共享内存布局：Qi, Kj, Vj, S, Oacc 顺序排布。
     extern __shared__ float smem[];
     float* Qi = smem;
     float* Kj = Qi + TILE * ld;
@@ -18,6 +22,7 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
     float* S = Vj + TILE * ld;
     float* Oacc = S + TILE * sld;
 
+    // 载入 query tile；越界线程补 0。
     for (int t = 0; t < d; ++t)
         Qi[tx * ld + t] = (q < M) ? Q[(size_t)q * d + t] : 0.f;
     for (int t = 0; t < d; ++t)
@@ -29,6 +34,7 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
 
     for (int jc = 0; jc < Tc; ++jc) {
         const int kv = jc * TILE + tx;
+        // 载入当前 KV tile。
         for (int t = 0; t < d; ++t) {
             Kj[tx * ld + t] = (kv < N) ? K[(size_t)kv * d + t] : 0.f;
             Vj[tx * ld + t] = (kv < N) ? V[(size_t)kv * d + t] : 0.f;
@@ -51,6 +57,7 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
             row_m = fmaxf(row_m, s);
         }
 
+        // 只有存在有效 query/key 时再更新 online 状态。
         if (row_m > -INFINITY) {
             float row_l = 0.f;
 #pragma unroll
@@ -66,6 +73,7 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
             const float beta = (row_m == m_new) ? 1.f : __expf(row_m - m_new);
             l_i = l_i * alpha + row_l * beta;
 
+            // Oacc = alpha * Oacc + beta * P @ V。
             for (int t = 0; t < d; ++t) {
                 float pv = 0.f;
 #pragma unroll
@@ -88,6 +96,7 @@ __global__ void attn_fa2_kernel(const float* __restrict__ Q, const float* __rest
 void solve(const float* Q, const float* K, const float* V, float* output, int M, int N, int d) {
     const int ld = d + 1;
     const int sld = TILE + 1;
+    // 3 个 TILE×ld 区域 + TILE×sld(S) + TILE×ld(Oacc)。
     const size_t smem =
         sizeof(float) * (size_t)(3 * TILE * ld + TILE * sld + TILE * ld);
     const int blocks = CEIL(M, TILE);

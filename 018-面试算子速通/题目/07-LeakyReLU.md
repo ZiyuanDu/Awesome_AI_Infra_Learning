@@ -1,7 +1,7 @@
 # Leaky ReLU（Element-wise）
 
 **LeetGPU：** Easy · [Leaky ReLU](https://leetgpu.com/challenges/leaky-relu)  
-**目录：** `element_wise/04_leaky_relu`
+**目录：** `01_element_wise/04_leaky_relu`
 
 $$
 f(x)=\begin{cases}x & x>0\\ \alpha x & x\le 0\end{cases},\quad \alpha=0.01

@@ -1,13 +1,13 @@
 # Sparse Matrix-Vector Multiplication（GEMV）
 
 **LeetGPU：** Medium · [SpMV](https://leetgpu.com/challenges/sparse-matrix-vector-multiplication)  
-**目录：** `gemm/02_spmv`
+**目录：** `04_gemm/02_spmv`
 
 \(y=Ax\)。站点给的 \(A\) 是 **row-major 稠密数组**（约 60–70% 为零），**不是 CSR**。计时 \(M{=}1000,\ N{=}10^4\)。
 
 ## 放哪
 
-`gemm/`：按行点积 = GEMV。复用 `blockReduceSum` / `__ldg`。
+`04_gemm/`：按行点积 = GEMV。复用 `blockReduceSum` / `__ldg`。
 
 ## 面试写法
 

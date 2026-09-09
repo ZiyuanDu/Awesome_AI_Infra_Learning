@@ -1,7 +1,7 @@
 # Interleave Arrays（Permute）
 
 **LeetGPU：** Easy · [Interleave Arrays](https://leetgpu.com/challenges/interleave-arrays)  
-**目录：** `permute/03_interleave_arrays`
+**目录：** `03_permute/03_interleave_arrays`
 
 两路 SoA 收成一路 AoS，数值不变，只换下标：
 

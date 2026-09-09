@@ -81,6 +81,7 @@ __device__ __forceinline__ void g2s_async(const half* __restrict__ A, const half
     cp_commit();
 }
 
+// WMMA fast path：M/N/K 均 16 对齐时使用，cp.async 双缓冲 + 16×16×16 tensor core。
 __global__ void gemm_wmma(const half* __restrict__ A, const half* __restrict__ B, half* __restrict__ C,
                           int M, int N, int K, float alpha, float beta) {
     __shared__ alignas(16) half As[2][BM * BK];
@@ -170,6 +171,7 @@ constexpr int CBM = 64, CBN = 64, CBK = 16, CTM = 4, CTN = 4;
 constexpr int CBLD = CBN + 4;
 constexpr int CT = (CBM / CTM) * (CBN / CTN);
 
+// CUDA core fallback：任意尺寸，尤其 16 不对齐时使用。
 __global__ void gemm_cuda(const half* __restrict__ A, const half* __restrict__ B, half* __restrict__ C,
                           int M, int N, int K, float alpha, float beta) {
     __shared__ half As[CBK][CBM];
@@ -227,6 +229,7 @@ __global__ void gemm_cuda(const half* __restrict__ A, const half* __restrict__ B
 }
 
 void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+    // 16 对齐走 WMMA；否则走通用 CUDA core tile 路径。
     if ((M % 16) == 0 && (N % 16) == 0 && (K % 16) == 0) {
         gemm_wmma<<<dim3(CEIL(N, BN), CEIL(M, BM)), THREADS>>>(A, B, C, M, N, K, alpha, beta);
     } else {

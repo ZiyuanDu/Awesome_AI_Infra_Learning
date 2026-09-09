@@ -1,7 +1,7 @@
 # ReLU（Element-wise）
 
 **LeetGPU：** Easy · [ReLU](https://leetgpu.com/challenges/relu)  
-**目录：** `element_wise/03_relu`
+**目录：** `01_element_wise/03_relu`
 
 $$
 \mathrm{ReLU}(x)=\max(0,x)

@@ -1,7 +1,7 @@
 # General Matrix Multiplication（GEMM）
 
 **LeetGPU：** Medium · [GEMM](https://leetgpu.com/challenges/general-matrix-multiplication-gemm)  
-**目录：** `gemm/03_gemm`
+**目录：** `04_gemm/03_gemm`
 
 和 Easy「矩阵乘法」不是同一题：这里是 **BLAS 语义 + FP16 I/O + FP32 累加**。
 

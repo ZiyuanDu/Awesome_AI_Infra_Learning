@@ -1,6 +1,8 @@
 #include "common.cuh"
 
 /*
+ * Online softmax attention。
+ *
  * Softmax Attention — Online（Milakov 2018 代数，单 query 流式扫 K）
  *
  * 一遍维护：
@@ -13,6 +15,8 @@
  * 与 3-pass 精确等价；K/V 只读一遍。FA 把这段嵌进 KV tile。
  * 并行：一线程一 query（d≤128，Oacc 寄存器）。
  */
+constexpr int MAX_D = 128;
+
 __global__ void attn_online_kernel(const float* __restrict__ Q, const float* __restrict__ K,
                                    const float* __restrict__ V, float* __restrict__ O, int M,
                                    int N, int d) {
@@ -21,7 +25,7 @@ __global__ void attn_online_kernel(const float* __restrict__ Q, const float* __r
         float scale = rsqrtf((float)d);
 
         float m = -INFINITY, l = 0.f;
-        float o[128];
+        float o[MAX_D];
         for (int t = 0; t < d; ++t)
             o[t] = 0.f;
 

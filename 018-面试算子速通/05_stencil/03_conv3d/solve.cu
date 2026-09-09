@@ -1,6 +1,8 @@
 #include "common.cuh"
 
 /*
+ * Conv3D valid 卷积。
+ *
  * 3D valid：out[d,r,c] = Σ in[d+kd,r+kr,c+kc] * ker[kd,kr,kc]
  * 布局：depth 最外，idx = ((d * rows + r) * cols + c)
  *
@@ -37,6 +39,7 @@ __global__ void conv3d_kernel(const float* __restrict__ in, float* __restrict__ 
     const int tid = (tz * TY + ty) * TX + tx;
     const int nThreads = TZ * TY * TX;
 
+    // 协作加载三维输入 tile，越界补 0。
     for (int t = tid; t < tileVol; t += nThreads) {
         const int ldpth = t / (tileR * tileC);
         const int rem = t - ldpth * tileR * tileC;
@@ -59,6 +62,7 @@ __global__ void conv3d_kernel(const float* __restrict__ in, float* __restrict__ 
     float acc = 0.f;
     for (int kd = 0; kd < kD; ++kd) {
         for (int kr = 0; kr < kR; ++kr) {
+            // inBase 指向当前 kernel 深度/行偏移后的输入行。
             const float* inBase = sIn + (tz + kd) * plane + (ty + kr) * ld + tx;
             const float* kBase = c_ker + (kd * kR + kr) * kC;
             for (int kc = 0; kc < kC; ++kc)

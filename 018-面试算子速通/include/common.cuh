@@ -5,100 +5,115 @@
 #define CEIL(a, b) (((a) + (b) - 1) / (b))
 
 
-struct sum_op {
-    __device__ __forceinline__ float operator()(float a, float b) const { return a + b; }
-    __device__ __forceinline__ static float init() { return 0.f; }
-};
-
-struct max_op {
-    __device__ __forceinline__ float operator()(float a, float b) const { return fmaxf(a, b); }
-    __device__ __forceinline__ static float init() { return -INFINITY; }
-};
-
-template <typename Op>
-__device__ __forceinline__ float warpReduce(float v) {
-#pragma unroll
-    for (int off = 16; off > 0; off >>= 1)
-        v = Op{}(v, __shfl_xor_sync(0xffffffff, v, off));
-    return v;
-}
-
+// =============================================================================
+// Reduce
+// =============================================================================
 __device__ __forceinline__ float warpReduceSum(float v) {
-    return warpReduce<sum_op>(v);
-}
-__device__ __forceinline__ float warpReduceMax(float v) {
-    return warpReduce<max_op>(v);
+#pragma unroll
+    for (size_t offset = 16; offset > 0; offset >>= 1)
+        v += __shfl_xor_sync(0xffffffff, v, offset);
+    return v;
 }
 
-__device__ __forceinline__ float warpScanInclusive(float v) {
-    const int lane = threadIdx.x & 31;
+__device__ __forceinline__ float warpReduceMax(float v) {
 #pragma unroll
-    for (int off = 1; off < 32; off <<= 1) {
-        float n = __shfl_up_sync(0xffffffff, v, off);
-        if (lane >= off)
-            v += n;
+    for (size_t offset = 16; offset > 0; offset >>= 1)
+        v = fmaxf(v, __shfl_xor_sync(0xffffffff, v, offset));
+    return v;
+}
+
+template <size_t BLOCK>
+__device__ __forceinline__ float blockReduceSum(float v) {
+    __shared__ float warp_sums[BLOCK / 32];
+    const size_t lane = threadIdx.x & 31;
+    const size_t warp = threadIdx.x >> 5;
+
+    v = warpReduceSum(v);
+
+    // 只让 每个 warp 的 lane0 写入
+    if (lane == 0) {
+        warp_sums[warp] = v;
+    }
+    __syncthreads();
+
+    // 只让 warp0 读取
+    if (warp == 0) {
+        v = (lane < BLOCK / 32) ? warp_sums[lane] : 0.f;
+        v = warpReduceSum(v);
     }
     return v;
 }
 
-template <int BLOCK, typename Op>
-__device__ __forceinline__ float blockReduce(float v) {
-    __shared__ float smem[BLOCK / 32];
-    __shared__ float res;
-    const int lane = threadIdx.x & 31;
-    const int wid = threadIdx.x >> 5;
-
-    v = warpReduce<Op>(v);
-    if (lane == 0)
-        smem[wid] = v;
-    __syncthreads();
-
-    if (wid == 0) {
-        v = (lane < BLOCK / 32) ? smem[lane] : Op::init();
-        v = warpReduce<Op>(v);
-        if (lane == 0)
-            res = v;
-    }
-    __syncthreads();
-    return res;
-}
-
-template <int BLOCK>
-__device__ __forceinline__ float blockReduceSum(float v) {
-    return blockReduce<BLOCK, sum_op>(v);
-}
 template <int BLOCK>
 __device__ __forceinline__ float blockReduceMax(float v) {
-    return blockReduce<BLOCK, max_op>(v);
-}
-template <int BLOCK>
-__device__ __forceinline__ float blockScanInclusive(float v) {
-    __shared__ float wsum[BLOCK / 32];
+    __shared__ float warp_maxs[BLOCK / 32];
     const int lane = threadIdx.x & 31;
-    const int wid = threadIdx.x >> 5;
+    const int warp = threadIdx.x >> 5;
 
-    v = warpScanInclusive(v);
-    if (lane == 31)
-        wsum[wid] = v;
+    v = warpReduceMax(v);
+    if (lane == 0)
+        warp_maxs[warp] = v;
     __syncthreads();
 
-    if (wid == 0) {
-        float w = (lane < BLOCK / 32) ? wsum[lane] : 0.f;
+    if (warp == 0) {
+        v = (lane < BLOCK / 32) ? warp_maxs[lane] : -INFINITY;
+        v = warpReduceMax(v);
+    }
+    return v;
+}
+
+// =============================================================================
+// Scan
+// =============================================================================
+
+__device__ __forceinline__ float warpScanInclusive(float v) {
+    const size_t lane = threadIdx.x & 31;
+
+    #pragma unroll
+    for (size_t offset = 1; offset < 32; offset <<= 1) {
+        float other = __shfl_up_sync(0xffffffff, v, offset);
+        // 只对比它大的数字做累加
+        if (lane >= offset) {
+            v += other;
+        }
+    }
+    return v;
+}
+
+template <int BLOCK>
+__device__ __forceinline__ float blockScanInclusive(float v) {
+    __shared__ float arrays[BLOCK / 32];
+    const size_t lane = threadIdx.x & 31;
+    const size_t warp = threadIdx.x >> 5;
+
+    v = warpScanInclusive(v);
+    // 最后一个线程具有完整的累加结果
+    if (lane == 31)
+        arrays[warp] = v;
+    __syncthreads();
+
+    //
+    if (warp == 0) {
+        float w = (lane < BLOCK / 32) ? arrays[lane] : 0.f;
         w = warpScanInclusive(w);
         if (lane < BLOCK / 32)
-            wsum[lane] = w;
+            arrays[lane] = w;
     }
     __syncthreads();
 
-    if (wid > 0)
-        v += wsum[wid - 1];
+    if (warp > 0)
+        v += arrays[warp - 1];
     return v;
 }
+
 template <int BLOCK>
 __device__ __forceinline__ float blockScanExclusive(float v) {
     return blockScanInclusive<BLOCK>(v) - v;
 }
 
+// =============================================================================
+// Online Softmax
+// =============================================================================
 __device__ __forceinline__ void onlineMerge(float& m, float& l, float m2, float l2) {
     float nm = fmaxf(m, m2);
     float a = (m == nm) ? 1.f : __expf(m - nm);
@@ -113,37 +128,50 @@ __device__ __forceinline__ void onlineUpdate(float& m, float& l, float x) {
 
 __device__ __forceinline__ void warpOnlineReduce(float& m, float& l) {
 #pragma unroll
-    for (int off = 16; off > 0; off >>= 1)
-        onlineMerge(m, l, __shfl_xor_sync(0xffffffff, m, off),
-                    __shfl_xor_sync(0xffffffff, l, off));
+    for (int offset = 16; offset > 0; offset >>= 1)
+        onlineMerge(m, l, __shfl_xor_sync(0xffffffff, m, offset),
+                    __shfl_xor_sync(0xffffffff, l, offset));
 }
 
 template <int BLOCK>
 __device__ __forceinline__ void blockOnlineReduce(float& m, float& l) {
-    __shared__ float sm[BLOCK / 32], sl[BLOCK / 32], bm, bl;
+    __shared__ float warp_m[BLOCK / 32], warp_l[BLOCK / 32];
+    __shared__ float block_m, block_l;
     const int lane = threadIdx.x & 31;
-    const int wid = threadIdx.x >> 5;
+    const int warp = threadIdx.x >> 5;
 
-    warpOnlineReduce(m, l);
-    if (lane == 0) {
-        sm[wid] = m;
-        sl[wid] = l;
+    float tm = warpReduceMax(m);
+    if (lane == 0)
+        warp_m[warp] = tm;
+    __syncthreads();
+    if (warp == 0) {
+        tm = (lane < BLOCK / 32) ? warp_m[lane] : -INFINITY;
+        tm = warpReduceMax(tm);
+        if (lane == 0)
+            block_m = tm;
     }
     __syncthreads();
+    const float m_g = block_m;
 
-    if (wid == 0) {
-        m = (lane < BLOCK / 32) ? sm[lane] : -INFINITY;
-        l = (lane < BLOCK / 32) ? sl[lane] : 0.f;
-        warpOnlineReduce(m, l);
-        if (lane == 0) {
-            bm = m;
-            bl = l;
-        }
+    float tl = l * ((m == m_g) ? 1.f : __expf(m - m_g));
+    tl = warpReduceSum(tl);
+    if (lane == 0)
+        warp_l[warp] = tl;
+    __syncthreads();
+    if (warp == 0) {
+        tl = (lane < BLOCK / 32) ? warp_l[lane] : 0.f;
+        tl = warpReduceSum(tl);
+        if (lane == 0)
+            block_l = tl;
     }
     __syncthreads();
-    m = bm;
-    l = bl;
+    m = m_g;
+    l = block_l;
 }
+
+// =============================================================================
+// Vector load / store helpers
+// =============================================================================
 
 __device__ __forceinline__ float4 load4(const float* p, int ld, int r, int c, int nr, int nc) {
     const int i = r * ld + c;
@@ -169,7 +197,6 @@ __device__ __forceinline__ void store4(float* p, int ld, int r, int c, float4 v,
         p[i + 3] = v.w;
 }
 
-/* 1D：load4(p, i, n) / store4(p, i, n, v) */
 __device__ __forceinline__ float4 load4(const float* p, int i, int n) {
     return load4(p, n, 0, i, 1, n);
 }

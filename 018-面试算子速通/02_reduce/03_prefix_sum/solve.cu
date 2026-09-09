@@ -1,6 +1,8 @@
 #include "common.cuh"
 
 /*
+ * Prefix Sum：inclusive scan，out[i] = in[0] + ... + in[i]。
+ *
  * Inclusive prefix sum: out[i] = in[0] + ... + in[i]
  *
  * Three stages (same mental model as solve_naive.cu), vectorized + hierarchical:
@@ -93,12 +95,13 @@ __global__ void scan_tile(const float* __restrict__ in, float* __restrict__ out,
     const float seed = (seeds && blockIdx.x) ? seeds[blockIdx.x - 1] : 0.f;
 
     float4 a = load4(in, base, N);
+    // 线程内 4 个元素先做串行 inclusive scan。
     float x = a.x;
     float y = x + a.y;
     float z = y + a.z;
-    float w = z + a.w;  // inclusive sum of this thread's 4 elements
+    float w = z + a.w;  // 该线程 4 个元素的总和
 
-    // exclusive scan of the per-thread chunk sums -> prefix before this thread
+    // 对每线程总和做 exclusive scan，得到本线程之前的跨线程前缀。
     float pref = seed + blockScanExclusive<BLOCK>(w);
     store4(out, base, N, make_float4(pref + x, pref + y, pref + z, pref + w));
 }

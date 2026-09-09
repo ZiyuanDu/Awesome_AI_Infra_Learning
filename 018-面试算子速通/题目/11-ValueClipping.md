@@ -1,7 +1,7 @@
 # Value Clipping（Element-wise）
 
 **LeetGPU：** Easy · [Value Clipping](https://leetgpu.com/challenges/value-clipping)  
-**目录：** `element_wise/08_value_clipping`
+**目录：** `01_element_wise/08_value_clipping`
 
 $$
 \mathrm{clip}(x)=\min(\max(x,\mathrm{lo}),\mathrm{hi})

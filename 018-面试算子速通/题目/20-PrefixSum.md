@@ -1,7 +1,7 @@
 # Prefix Sum（Reduce / Scan）
 
 **LeetGPU：** Medium · [Prefix Sum](https://leetgpu.com/challenges/prefix-sum)  
-**目录：** `reduce/03_prefix_sum`
+**目录：** `02_reduce/03_prefix_sum`
 
 Inclusive：`out[i]=in[0]+…+in[i]`。例：`[1,2,3,4]→[1,3,6,10]`。
 

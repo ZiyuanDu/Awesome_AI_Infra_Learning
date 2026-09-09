@@ -1,7 +1,7 @@
 # SWiGLU（Element-wise，门控）
 
 **LeetGPU：** Easy · [Swish-Gated Linear Unit](https://leetgpu.com/challenges/swish-gated-linear-unit)  
-**目录：** `element_wise/07_swiglu`
+**目录：** `01_element_wise/07_swiglu`
 
 **不是 SiLU。** SiLU 是一元 `x·σ(x)`（`06_silu`）。本题把输入切两半再门控：
 

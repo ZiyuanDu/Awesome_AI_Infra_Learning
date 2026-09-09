@@ -1,43 +1,49 @@
 #include "common.cuh"
 
+// 通用矩阵乘法：C = A * B。
+// 约定 row-major：A 为 M×N，B 为 N×K，C 为 M×K。
+// 实现：shared memory tile + 寄存器分块外积 + float4 加载。
 
-constexpr int BM = 128, BN = 128, BK = 16;          // 块级处理128x128的矩阵，每个块处理16x16的矩阵
-constexpr int TM = 8, TN = 4;                       // 每个线程负责计算8x4的矩阵
-constexpr int BLD = BN + 4;                         // 为了解决bank conflict，需要多加4列
-constexpr int T = (BM / TM) * (BN / TN);            // 每个 Block 包含的总线程数
-constexpr int nA = BM * BK / 4 / T;                 // 每个线程需要加载的 float4 数量 总元素 / 4 / 每个 Block 包含的总线程数
-constexpr int nB = BK * BN / 4 / T;                 // 每个线程需要加载的 float4 数量 总元素 / 4 / 每个 Block 包含的总线程数
+constexpr int BM = 128;                             // 输出 tile 的行数
+constexpr int BN = 128;                             // 输出 tile 的列数
+constexpr int BK = 16;                              // 内维 tile
+constexpr int TM = 8;                               // 每个线程计算的 C 行数
+constexpr int TN = 4;                               // 每个线程计算的 C 列数
+constexpr int BLD = BN + 4;                         // shared memory 行距 +4，缓解 bank conflict
+constexpr int THREADS_PER_BLOCK = (BM / TM) * (BN / TN);
+constexpr int A_VEC_PER_THREAD = BM * BK / 4 / THREADS_PER_BLOCK;
+constexpr int B_VEC_PER_THREAD = BK * BN / 4 / THREADS_PER_BLOCK;
 
 
 
 __device__ __forceinline__ void load_ab(const float* A, const float* B, int M, int N, int K, int n0,
-                                       int tid, int by, int bx, float4 ra[nA], float4 rb[nB]) {
-    // 加载 A 矩阵 
+                                       int tid, int by, int bx, float4 ra[A_VEC_PER_THREAD],
+                                       float4 rb[B_VEC_PER_THREAD]) {
+    // 加载 A 矩阵的当前内维 tile。
 #pragma unroll
-    for (int t = 0; t < nA; ++t) {
-        int idx = t * T + tid;
+    for (int t = 0; t < A_VEC_PER_THREAD; ++t) {
+        int idx = t * THREADS_PER_BLOCK + tid;
         int m = idx / (BK / 4);
         int n = (idx % (BK / 4)) * 4;
-        // 加载 A 矩阵的 float4 元素
         ra[t] = load4(A, N, by * BM + m, n0 + n, M, N);
     }
-    // 加载 B 矩阵 
+    // 加载 B 矩阵的当前内维 tile。
 #pragma unroll
-    for (int t = 0; t < nB; ++t) {
-        int idx = t * T + tid;
+    for (int t = 0; t < B_VEC_PER_THREAD; ++t) {
+        int idx = t * THREADS_PER_BLOCK + tid;
         int n = idx / (BN / 4);
         int k = (idx % (BN / 4)) * 4;
-        // 加载 B 矩阵的 float4 元素
         rb[t] = load4(B, K, n0 + n, bx * BN + k, N, K);
     }
 }
 
-__device__ __forceinline__ void store_ab(float As[][BM], float Bs[][BLD], int tid, const float4 ra[nA],
-                                         const float4 rb[nB]) {
-    // 面试亮点：A 矩阵转置
+__device__ __forceinline__ void store_ab(float As[][BM], float Bs[][BLD], int tid,
+                                         const float4 ra[A_VEC_PER_THREAD],
+                                         const float4 rb[B_VEC_PER_THREAD]) {
+    // A tile 转置存进 smem，后续行方向读取更友好。
 #pragma unroll
-    for (int t = 0; t < nA; ++t) {
-        int idx = t * T + tid;
+    for (int t = 0; t < A_VEC_PER_THREAD; ++t) {
+        int idx = t * THREADS_PER_BLOCK + tid;
         int m = idx / (BK / 4);
         int n = (idx % (BK / 4)) * 4;
         As[n + 0][m] = ra[t].x;
@@ -46,8 +52,8 @@ __device__ __forceinline__ void store_ab(float As[][BM], float Bs[][BLD], int ti
         As[n + 3][m] = ra[t].w;
     }
 #pragma unroll
-    for (int t = 0; t < nB; ++t) {
-        int idx = t * T + tid;
+    for (int t = 0; t < B_VEC_PER_THREAD; ++t) {
+        int idx = t * THREADS_PER_BLOCK + tid;
         int n = idx / (BN / 4);
         int k = (idx % (BN / 4)) * 4;
         *reinterpret_cast<float4*>(&Bs[n][k]) = rb[t];
@@ -86,14 +92,14 @@ __global__ void matrix_multiplication_kernel(const float* __restrict__ A, const 
     const int tid = ty * blockDim.x + tx;
     const int by = blockIdx.y, bx = blockIdx.x;
     float acc[TM][TN] = {};
-    float4 ra[nA], rb[nB];
+    float4 ra[A_VEC_PER_THREAD], rb[B_VEC_PER_THREAD];
 
     // 加载 A 矩阵和 B 矩阵
     load_ab(A, B, M, N, K, 0, tid, by, bx, ra, rb);
-    // 存储 A 矩阵和 B 矩阵
     store_ab(As[0], Bs[0], tid, ra, rb);
     __syncthreads();
 
+    // 双缓冲：先算当前 tile，同时把下一个 tile 载入另一个 buffer。
     int rb_id = 0;
     const int tiles = CEIL(N, BK);
     for (int t = 1; t < tiles; ++t) {

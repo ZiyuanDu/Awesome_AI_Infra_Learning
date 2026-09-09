@@ -1,7 +1,7 @@
 # SiLU / Sigmoid Linear Unit（Element-wise）
 
 **LeetGPU：** Easy · [Sigmoid Linear Unit](https://leetgpu.com/challenges/sigmoid-linear-unit)  
-**目录：** `element_wise/06_silu`
+**目录：** `01_element_wise/06_silu`
 
 $$
 \sigma(x)=\frac{1}{1+e^{-x}},\qquad \mathrm{SiLU}(x)=x\cdot\sigma(x)=\frac{x}{1+e^{-x}}
