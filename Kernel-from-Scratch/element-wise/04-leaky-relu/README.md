@@ -22,4 +22,4 @@ void solve(const float* input, float* output, int N);
 | `output` | 长度为 N 的 float 输出数组；负半轴斜率固定为 0.01。 |
 | `N` | 输入和输出的元素个数。 |
 
-`α` **写死 0.01**，不进参数。`1 ≤ N ≤ 1e8`，计时 `N=5e7`。
+`1 ≤ N ≤ 1e8`，计时 `N=5e7`。
