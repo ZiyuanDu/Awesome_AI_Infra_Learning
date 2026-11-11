@@ -1,0 +1,16 @@
+#include <cuda_runtime.h>
+
+#define CEIL(x, y) (((x) + (y) - 1) / (y))
+
+void solve(
+    const float* x,
+    const float* weight,
+    const float* dy,
+    float* dx,
+    float* dweight,
+    int N,
+    int C,
+    float eps
+) {
+    // TODO
+}
