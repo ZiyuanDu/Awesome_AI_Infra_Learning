@@ -2,6 +2,8 @@
 
 #define CEIL(x, y) (((x) + (y) - 1) / (y))
 
+constexpr int THREADS = 256;
+
 void solve(const float* X, const float* S, float* Y, int M, int N, int TILE_SIZE) {
     // TODO
 }

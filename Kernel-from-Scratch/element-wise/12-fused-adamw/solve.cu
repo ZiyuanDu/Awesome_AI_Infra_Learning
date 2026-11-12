@@ -2,6 +2,8 @@
 
 #define CEIL(x, y) (((x) + (y) - 1) / (y))
 
+constexpr int THREADS = 256;
+
 void solve(
     float* params,
     const float* grad,

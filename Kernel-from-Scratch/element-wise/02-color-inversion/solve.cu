@@ -1,7 +1,7 @@
 #include <cuda_runtime.h>
 
 #define CEIL(x, y) (((x) + (y) - 1) / (y))
-const int THREADS = 256;
+constexpr int THREADS = 256;
 
 __device__ __forceinline__ uchar4 invertColor(uchar4 v) {
     return make_uchar4(255-v.x, 255-v.y, 255-v.z, v.w);

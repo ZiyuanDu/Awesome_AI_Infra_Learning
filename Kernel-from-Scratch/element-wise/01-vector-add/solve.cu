@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #define CEIL(x, y) (((x) + (y) - 1) / (y));
-const int THREADS = 256;
+constexpr int THREADS = 256;
 
 __device__ __forceinline__ float4 add4(float4 a, float4 b) {
     return make_float4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
