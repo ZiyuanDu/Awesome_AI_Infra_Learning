@@ -15,5 +15,5 @@
 | GELU | [08-gelu](08-gelu/README.md) | 基础 |
 | GEGLU | [09-geglu](09-geglu/README.md) | 基础 |
 | RoPE / 旋转位置编码 | [10-rope](10-rope/README.md) | 基础 |
-| Weight Dequantization / 分块反量化 | [11-weight-dequantization](11-weight-dequantization/README.md) | 专项 |
-| Fused AdamW / 融合优化器更新 | [12-fused-adamw](12-fused-adamw/README.md) | 专项 |
+| Weight Dequantization / 分块反量化 | [09-weight-dequantization](09-weight-dequantization/README.md) | 专项 |
+| Fused AdamW / 融合优化器更新 | [10-fused-adamw](10-fused-adamw/README.md) | 专项 |
