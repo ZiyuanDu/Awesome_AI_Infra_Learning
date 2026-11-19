@@ -64,3 +64,11 @@ void solve(
     int t
 );
 ```
+
+## Benchmark
+
+在官方尺寸上对比自写 CUDA、`torch.optim.AdamW(fused=True)` 和手写 PyTorch 张量运算。三种实现从相同的状态执行第 `1000` 步，先核对 `params`、`m`、`v`，再用 CUDA event 测量单步耗时并取中位数。每次计时前恢复初始状态。
+
+```bash
+python Kernel-from-Scratch/element-wise/10-fused-adamw/bench.py
+```
