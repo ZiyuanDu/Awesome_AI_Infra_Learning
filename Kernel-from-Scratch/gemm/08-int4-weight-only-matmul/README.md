@@ -48,4 +48,4 @@ M=N=1、K=2、group_size=2，x=[1,1]、w_q=[0x98]、scale=1；解码权重 [1,0]
 
 **PyTorch 对照：** `解码到 FP32、乘对应 scale，计算 x.float() @ W.T，最后转 half。`
 
-**前置练习：** [gemm/06-fp16-batched-matmul](../06-fp16-batched-matmul/README.md) → [element-wise/13-weight-dequantization](../../element-wise/13-weight-dequantization/README.md)
+**前置练习：** [element-wise/09-weight-dequantization](../../element-wise/09-weight-dequantization/README.md)

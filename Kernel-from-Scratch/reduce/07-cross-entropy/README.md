@@ -35,5 +35,3 @@ void solve(const float* logits, const int* true_labels, float* loss, int N, int 
 1≤N≤10000，2≤C≤1000，logits∈[-10,10]。标签上界必须严格小于 C。
 
 **PyTorch 对照：** `torch.nn.functional.cross_entropy(logits, true_labels.long(), reduction='mean')`
-
-**前置练习：** [reduce/09-logsumexp](../09-logsumexp/README.md)

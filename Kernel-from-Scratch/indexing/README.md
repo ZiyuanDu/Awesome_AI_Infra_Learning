@@ -2,7 +2,7 @@
 
 非规则 Gather/Embedding 读取、Scatter 聚合以及相关融合。
 
-每题包含 `README.md`、`solve.cu` 和 `bench.py`。前置练习见各题题面；专项题可按目标岗位选做。
+共 **4 个题目 / 版本目录**。每题包含 `README.md`、`solve.cu` 和 `bench.py`。前置练习见各题题面；专项题可按目标岗位选做。
 
 | 题目 | 目录 | 层级 |
 |---|---|---|

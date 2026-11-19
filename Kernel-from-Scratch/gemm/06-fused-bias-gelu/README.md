@@ -38,4 +38,4 @@ M,N,K≥1，输入有限；GELU 使用 erf 形式；输入输出不别名。
 
 **PyTorch 对照：** `torch.nn.functional.gelu(A @ B + bias, approximate='none')`
 
-**前置练习：** [gemm/01-matrix-mul](../01-matrix-mul/README.md) → [element-wise/09-gelu](../../element-wise/09-gelu/README.md) → [element-wise/12-bias-add](../../element-wise/12-bias-add/README.md)
+**前置练习：** [gemm/01-matrix-mul](../01-matrix-mul/README.md) → [element-wise/08-gelu](../../element-wise/08-gelu/README.md)

@@ -44,4 +44,4 @@ x=[[1,1]]，residual=[[2,3]]、weight=[1,1]，归一化对象为 [[3,4]]。
 
 1≤N,C≤65536，eps=1e-5。官方计时 N=C=4096。只写 out，不更新 residual。
 
-**前置练习：** [normalization/03-row-rms-norm](../03-row-rms-norm/README.md)
+**前置练习：** [normalization/02-row-rms-norm](../02-row-rms-norm/README.md)

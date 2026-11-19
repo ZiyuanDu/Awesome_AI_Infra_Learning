@@ -37,6 +37,4 @@ N,C≥1，eps>0，输入有限。使用 FP32 统计均方值。
 
 **PyTorch 对照：** `input * torch.rsqrt((input*input).mean(dim=1, keepdim=True)+eps) * weight`
 
-本题采用按行、逐通道权重的扩展接口；官方一维标量 gamma/beta 版本见前置练习。
-
-**前置练习：** [normalization/02-vector-rms-norm](../02-vector-rms-norm/README.md)
+本题采用按行归约、逐通道权重的接口。

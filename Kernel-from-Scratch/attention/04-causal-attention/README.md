@@ -35,4 +35,4 @@ M=2、d=1，Q=K=0、V=[[2],[4]]，输出 [[2],[3]]。
 
 1≤M≤10000，1≤d≤128；包含对角线位置；Softmax 按行稳定计算。
 
-**前置练习：** [attention/02-online](../02-online/README.md) → [reduce/07-masked-softmax](../../reduce/07-masked-softmax/README.md)
+**前置练习：** [attention/02-online](../02-online/README.md)

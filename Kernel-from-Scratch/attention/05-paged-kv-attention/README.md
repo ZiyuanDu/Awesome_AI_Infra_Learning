@@ -52,6 +52,6 @@ void solve(
 
 1≤batch_size≤32，1≤num_heads≤64；head_dim≤256 且为 4 的倍数；block_size 为不大于 64 的 2 的幂；有效长度在 [1,8192]。
 
-只访问有效 token 覆盖的页；页表尾部是 padding，池里未被引用的页也不得读取。前面的公式只定义寻址，后续按连续 Decode Attention 的公式归一化、加权 V。
+只访问有效 token 覆盖的页；页表尾部是 padding，池里未被引用的页也不得读取。前面的公式只定义寻址，后续计算 Q 与 K 的缩放点积，经 Softmax 归一化后加权求和 V。
 
-**前置练习：** [attention/06-decode-attention](../06-decode-attention/README.md) → [indexing/01-gather](../../indexing/01-gather/README.md)
+**前置练习：** [indexing/01-gather](../../indexing/01-gather/README.md)
